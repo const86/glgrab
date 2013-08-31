@@ -18,11 +18,24 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef _GLGRAB_H
+#define _GLGRAB_H
+
 #include <stdint.h>
 
+/**
+ * Structure of grabbed frame as passed through MRB.
+ * Pixel data is in BGRA 8:8:8:8 format packed in lines
+ * aligned by 8 byte. I.e. in case of odd width image contains
+ * stray pixel at end of each line.
+ * Timestamps are read after glXSwapBuffers() returns and merely
+ * correspond to time of displaying.
+ */
 struct glgrab_frame {
-	uint64_t ns;
-	uint32_t height;
-	uint32_t width;
+	uint64_t ns; ///< Timestamp in nanoseconds starting from unknown point
+	uint32_t height; ///< Height of image
+	uint32_t width; ///< Width of image
 	char data[] __attribute__((aligned(8)));
 };
+
+#endif
