@@ -50,9 +50,9 @@ static unsigned long long str2int(const char *s, unsigned long long def) {
 }
 
 static bool init_mrb(void) {
-	static enum { virgin, going, done, failed } volatile state;
+	static enum state { virgin, going, done, failed } volatile state;
 
-	int res = virgin;
+	enum state res = virgin;
 	if (__atomic_compare_exchange_n(&state, &res, going, false, __ATOMIC_CONSUME, __ATOMIC_CONSUME)) {
 		res = failed;
 
