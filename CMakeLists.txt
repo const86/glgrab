@@ -4,8 +4,6 @@ project(glgrab)
 add_definitions(-std=c99)
 
 add_library(glgrab-audit SHARED audit.c)
-set_target_properties(glgrab-audit PROPERTIES
-  LINK_FLAGS "-nostdlib")
 
 add_library(glgrab-preload SHARED
   preload.c

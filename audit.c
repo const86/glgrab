@@ -20,10 +20,9 @@
 
 #define _GNU_SOURCE
 
-#include <link.h>
 #include <GL/glx.h>
-
-#define strcmp __builtin_strcmp
+#include <link.h>
+#include <string.h>
 
 typedef void (*glXSwapBuffers_t)(Display *, GLXDrawable);
 static glXSwapBuffers_t real_glXSwapBuffers;
