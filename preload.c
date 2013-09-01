@@ -33,50 +33,10 @@
 #include <unistd.h>
 
 #define DEFAULT_MRB_SIZE (256ULL << 20)
-#define DEFAULT_MAX_FRAME_SIZE (4ULL * 4096 * 4096)
 
 static struct mrb rb;
-static bool started = false;
 static time_t start_time;
-
-void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
-	if (!real) return;
-
-	if (!started)
-		goto fail;
-
-	unsigned width = 0, height = 0;
-	glXQueryDrawable(dpy, drawable, GLX_WIDTH, &width);
-	glXQueryDrawable(dpy, drawable, GLX_HEIGHT, &height);
-
-	unsigned stride = (width * 4 + 7U) & ~7U;
-	struct glgrab_frame *frame = mrb_reserve(&rb, sizeof(struct glgrab_frame) + stride * height);
-	if (!frame)
-		goto fail;
-
-	frame->width = width;
-	frame->height = height;
-
-	glPushAttrib(GL_PIXEL_MODE_BIT);
-	glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
-	glReadBuffer(GL_BACK);
-	glPixelStorei(GL_PACK_ALIGNMENT, 8);
-	glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, frame->data);
-	glPopClientAttrib();
-	glPopAttrib();
-
-	real(dpy, drawable);
-
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	frame->ns = (ts.tv_sec - start_time) * 1000000000ULL + ts.tv_nsec;
-
-	mrb_commit(&rb);
-	return;
-
-fail:
-	real(dpy, drawable);
-}
+static const char *prefix;
 
 static unsigned long long str2int(const char *s, unsigned long long def) {
 	if (!s)
@@ -89,29 +49,83 @@ static unsigned long long str2int(const char *s, unsigned long long def) {
 	return errno == 0 && *end == '\0' && x >= 0 ? x : def;
 }
 
-void __attribute__((constructor)) init(void) {
-	const char *prefix = getenv("GLGRAB_PREFIX");
-	if (prefix == NULL)
-		return;
+static bool init_mrb(void) {
+	static enum { virgin, going, done, failed } volatile state;
 
-	char name[strlen(prefix) + 30];
-	snprintf(name, sizeof(name), "%s-%llu.mrb", prefix, (unsigned long long)getpid());
+	int res = virgin;
+	if (__atomic_compare_exchange_n(&state, &res, going, false, __ATOMIC_CONSUME, __ATOMIC_CONSUME)) {
+		res = failed;
 
-	int err = mrb_create(&rb, name,
-			str2int(getenv("GLGRAB_BUFSIZE"), DEFAULT_MRB_SIZE),
-			str2int(getenv("GLGRAB_MAXFRAME"), DEFAULT_MAX_FRAME_SIZE));
-	if (err) {
-		fprintf(stderr, "glgrab: failed to create ring buffer \"%s\": %s\n",
-			name, strerror(err));
+		char name[strlen(prefix) + 30];
+		snprintf(name, sizeof(name), "%s-%llu.mrb", prefix, (unsigned long long)getpid());
+
+		uint64_t size = str2int(getenv("GLGRAB_BUFSIZE"), DEFAULT_MRB_SIZE);
+		int err = mrb_create(&rb, name, size, str2int(getenv("GLGRAB_MAXFRAME"), size));
+		if (err) {
+			fprintf(stderr,
+				"glgrab: failed to create ring buffer \"%s\" size %" PRIu64 ": %s\n",
+				name, size, strerror(err));
+		} else {
+			struct timespec ts;
+			clock_gettime(CLOCK_MONOTONIC, &ts);
+			start_time = ts.tv_sec;
+			res = done;
+		}
+
+		__atomic_store_n(&state, res, __ATOMIC_RELEASE);
+	}
+
+	return res == done;
+}
+
+void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
+	if (!real) return;
+
+	static volatile int running = 0;
+
+	int allowed = 0;
+	if (!prefix || !init_mrb() ||
+		!__atomic_compare_exchange_n(&running, &allowed, 1, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+		real(dpy, drawable);
 		return;
 	}
 
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	start_time = ts.tv_sec;
+	unsigned width = 0, height = 0;
+	glXQueryDrawable(dpy, drawable, GLX_WIDTH, &width);
+	glXQueryDrawable(dpy, drawable, GLX_HEIGHT, &height);
 
-	hook_glXSwapBuffers(NULL, NULL, 0);
-	started = true;
+	unsigned stride = (width * 4 + 7U) & ~7U;
+	struct glgrab_frame *frame = mrb_reserve(&rb, sizeof(struct glgrab_frame) + stride * height);
+	if (frame) {
+		frame->width = width;
+		frame->height = height;
+
+		glPushAttrib(GL_PIXEL_MODE_BIT);
+		glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
+		glReadBuffer(GL_BACK);
+		glPixelStorei(GL_PACK_ALIGNMENT, 8);
+		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, frame->data);
+		glPopClientAttrib();
+		glPopAttrib();
+
+		real(dpy, drawable);
+
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		frame->ns = (ts.tv_sec - start_time) * 1000000000ULL + ts.tv_nsec;
+
+		mrb_commit(&rb);
+	} else {
+		fprintf(stderr, "glgrab: failed to allocate frame %ux%u\n", width, height);
+		real(dpy, drawable);
+	}
+
+	__atomic_store_n(&running, 0, __ATOMIC_RELEASE);
+}
+
+void __attribute__((constructor)) init(void) {
+	if ((prefix = getenv("GLGRAB_PREFIX")))
+		hook_glXSwapBuffers(NULL, NULL, 0);
 }
 
 void __attribute__((destructor)) destroy(void) {
