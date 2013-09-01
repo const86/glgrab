@@ -25,6 +25,7 @@
 
 #include <X11/Xlib.h>
 #include <GL/glx.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,8 +80,6 @@ static bool init_mrb(void) {
 }
 
 void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
-	if (!real) return;
-
 	static volatile int running = 0;
 
 	int allowed = 0;
@@ -124,8 +123,18 @@ void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLX
 }
 
 void __attribute__((constructor)) init(void) {
-	if ((prefix = getenv("GLGRAB_PREFIX")))
-		hook_glXSwapBuffers(NULL, NULL, 0);
+	if ((prefix = getenv("GLGRAB_PREFIX"))) {
+		void *h = dlopen(NULL, RTLD_LAZY);
+
+		if (h) {
+			if (!dlsym(h, "hook_glXSwapBuffers"))
+				fprintf(stderr, "glgrab: failed to bind hook: %s\n", dlerror());
+
+			dlclose(h);
+		} else {
+			fprintf(stderr, "glgrab: failed to dlopen() myself: %s\n", dlerror());
+		}
+	}
 }
 
 void __attribute__((destructor)) destroy(void) {

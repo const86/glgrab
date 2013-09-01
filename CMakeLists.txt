@@ -9,7 +9,7 @@ add_library(glgrab-preload SHARED
   preload.c
   mrb_write.c
   )
-target_link_libraries(glgrab-preload rt GL)
+target_link_libraries(glgrab-preload dl rt GL)
 
 add_executable(glgrab-monitor
   monitor.c
