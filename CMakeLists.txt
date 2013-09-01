@@ -15,3 +15,10 @@ add_executable(glgrab-monitor
   monitor.c
   mrb_read.c
 )
+
+add_library(glgrab-avformat SHARED
+  avformat.c
+  avformat-preload.c
+  mrb_read.c
+)
+target_link_libraries(glgrab-avformat avformat rt)

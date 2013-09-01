@@ -38,4 +38,6 @@ struct glgrab_frame {
 	char data[] __attribute__((aligned(8)));
 };
 
+extern struct AVInputFormat glgrab_avformat;
+
 #endif
