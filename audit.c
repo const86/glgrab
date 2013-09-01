@@ -24,6 +24,8 @@
 #include <link.h>
 #include <string.h>
 
+#pragma GCC visibility push(default)
+
 typedef void (*glXSwapBuffers_t)(Display *, GLXDrawable);
 static glXSwapBuffers_t real_glXSwapBuffers;
 

@@ -33,6 +33,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#pragma GCC visibility push(default)
+
 #define DEFAULT_MRB_SIZE (256ULL << 20)
 
 static struct mrb rb;
@@ -122,7 +124,7 @@ void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLX
 	__atomic_store_n(&running, 0, __ATOMIC_RELEASE);
 }
 
-void __attribute__((constructor)) init(void) {
+static void __attribute__((constructor)) init(void) {
 	if ((prefix = getenv("GLGRAB_PREFIX"))) {
 		void *h = dlopen(NULL, RTLD_LAZY);
 
@@ -137,6 +139,6 @@ void __attribute__((constructor)) init(void) {
 	}
 }
 
-void __attribute__((destructor)) destroy(void) {
+static void __attribute__((destructor)) destroy(void) {
 	mrb_shutdown(&rb);
 }
