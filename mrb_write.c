@@ -90,7 +90,7 @@ int mrb_create(struct mrb *q, const char *path, uint64_t size, uint64_t max_item
 	q->header->max_item_size = q->max_item_size = max_item_size;
 
 	q->header->align_bits = q->align_bits = ilog(ALIGN);
-	q->header->off_bits = q->off_bits = ilog(size) - q->align_bits;
+	q->header->off_bits = q->off_bits = (ilog(size - 1) + 1) - q->align_bits;
 	q->data_offset = roundup(sizeof(mrb_ptr), q->align_bits);
 
 	q->header->tail = mrb_item_pack(q, (struct mrb_item){1, 0});
