@@ -21,4 +21,4 @@ add_library(glgrab-avformat SHARED
   avformat-preload.c
   mrb_read.c
 )
-target_link_libraries(glgrab-avformat avformat)
+target_link_libraries(glgrab-avformat avcodec avformat)

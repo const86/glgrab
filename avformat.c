@@ -21,6 +21,7 @@
 #include "glgrab.h"
 #include "mrb.h"
 #include <float.h>
+#include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
 
@@ -30,6 +31,8 @@ struct glgrab_priv {
 	struct AVStream *stream;
 	AVRational time_base;
 	int64_t last_pts;
+	AVPacket pkt0;
+	uint64_t ts0;
 };
 
 static const struct AVOption options[] = {
@@ -48,6 +51,7 @@ static const AVClass glgrab_class = {
 static int read_header(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
 	g->last_pts = -1;
+	av_init_packet(&g->pkt0);
 	avctx->ctx_flags = AVFMTCTX_NOHEADER;
 	return AVERROR(mrb_open(&g->rb, avctx->filename));
 }
@@ -61,8 +65,17 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 		if (!mrb_reveal(&g->rb, &p))
 			return AVERROR(EAGAIN);
 
-		if (!p)
+		if (!p) {
+			if (g->pkt0.pts != AV_NOPTS_VALUE) {
+				av_free_packet(pkt);
+				*pkt = g->pkt0;
+				memset(&g->pkt0, 0, sizeof(g->pkt0));
+				av_init_packet(&g->pkt0);
+				return 0;
+			}
+
 			return AVERROR_EOF;
+		}
 
 		const struct glgrab_frame *frame = p, copy = *frame;
 		if (!mrb_check(&g->rb))
@@ -85,13 +98,15 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			continue;
 
 		const AVRational ns = {1, 1000000000};
-		int64_t pts = av_rescale_q_rnd(copy.ns, ns, s->time_base, AV_ROUND_NEAR_INF);
+		int64_t pts = av_rescale_q_rnd(copy.ns, ns, g->time_base, AV_ROUND_NEAR_INF);
 		if (pts <= g->last_pts)
 			continue;
 
 		int size = avpicture_get_size(codec->pix_fmt, copy.width, copy.height);
 
-		err = av_new_packet(pkt, size);
+		AVPacket pkt1;
+		av_init_packet(&pkt1);
+		err = av_new_packet(&pkt1, size);
 		if (!err) {
 			int stride = (copy.width + 1 & ~1) * 4;
 			AVPicture pic = {
@@ -99,14 +114,56 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 				{-stride}
 			};
 
-			avpicture_layout(&pic, codec->pix_fmt, copy.width, copy.height, pkt->data, size);
-			if (!mrb_check(&g->rb))
+			avpicture_layout(&pic, codec->pix_fmt, copy.width, copy.height, pkt1.data, size);
+			if (!mrb_check(&g->rb)) {
+				av_free_packet(&pkt1);
 				continue;
+			}
 
-			pkt->pts = g->last_pts = pts;
-			pkt->dts = AV_NOPTS_VALUE;
-			pkt->stream_index = s->index;
-			pkt->flags = AV_PKT_FLAG_KEY;
+			pkt1.pts = pts;
+			pkt1.dts = AV_NOPTS_VALUE;
+			pkt1.stream_index = s->index;
+			pkt1.flags = AV_PKT_FLAG_KEY;
+
+			if (g->pkt0.pts == AV_NOPTS_VALUE) {
+				if (av_compare_ts(copy.ns, ns, pkt1.pts, g->time_base) <= 0) {
+					g->pkt0 = pkt1;
+					g->ts0 = copy.ns;
+					continue;
+				} else {
+					av_free_packet(pkt);
+					*pkt = pkt1;
+					g->last_pts = pkt1.pts;
+				}
+			} else if (pkt1.pts > g->pkt0.pts) {
+				av_free_packet(pkt);
+				*pkt = g->pkt0;
+				g->last_pts = g->pkt0.pts;
+
+				g->pkt0 = pkt1;
+				g->ts0 = copy.ns;
+			} else if (av_compare_ts(pkt1.pts, g->time_base, copy.ns, ns) < 0) {
+				uint64_t ts = av_rescale_q_rnd(pkt1.pts, g->time_base, ns, AV_ROUND_NEAR_INF);
+
+				g->last_pts = pkt1.pts;
+				av_free_packet(pkt);
+
+				if (ts - g->ts0 < copy.ns - ts) {
+					*pkt = g->pkt0;
+					av_free_packet(&pkt1);
+				} else {
+					*pkt = pkt1;
+					av_free_packet(&g->pkt0);
+				}
+
+				memset(&g->pkt0, 0, sizeof(g->pkt0));
+				av_init_packet(&g->pkt0);
+			} else {
+				av_free_packet(&g->pkt0);
+				g->pkt0 = pkt1;
+				g->ts0 = copy.ns;
+				continue;
+			}
 		}
 
 		retry = false;
@@ -117,6 +174,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 
 static int read_close(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
+	av_free_packet(&g->pkt0);
 	return AVERROR(mrb_close(&g->rb));
 }
 
