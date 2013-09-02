@@ -81,6 +81,13 @@ static bool init_mrb(void) {
 	return res == done;
 }
 
+static bool x11_error_found;
+
+static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
+	x11_error_found = true;
+	return 0;
+}
+
 void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
 	static volatile int running = 0;
 
@@ -92,8 +99,20 @@ void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLX
 	}
 
 	unsigned width = 0, height = 0;
+
+	x11_error_found = false;
+	XErrorHandler error_handler = XSetErrorHandler(x11_error_handler);
 	glXQueryDrawable(dpy, drawable, GLX_WIDTH, &width);
 	glXQueryDrawable(dpy, drawable, GLX_HEIGHT, &height);
+	XSync(dpy, false);
+	XSetErrorHandler(error_handler);
+
+	if (x11_error_found) {
+		Window w;
+		unsigned u;
+		int i;
+		XGetGeometry(dpy, drawable, &w, &i, &i, &width, &height, &u, &u);
+	}
 
 	unsigned stride = (width * 4 + 7U) & ~7U;
 	struct glgrab_frame *frame = mrb_reserve(&rb, sizeof(struct glgrab_frame) + stride * height);
