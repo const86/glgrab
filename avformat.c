@@ -53,10 +53,8 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 
 	for (bool retry = true; retry; mrb_release(&g->rb)) {
 		const void *p;
-		while (!mrb_reveal(&g->rb, &p)) {
-			const struct timespec ts = {0, 10000000};
-			clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, NULL);
-		}
+		if (!mrb_reveal(&g->rb, &p))
+			return AVERROR(EAGAIN);
 
 		if (!p)
 			return AVERROR_EOF;
