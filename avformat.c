@@ -18,19 +18,23 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _XOPEN_SOURCE 700
-
 #include "glgrab.h"
 #include "mrb.h"
+#include <float.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
 
 struct glgrab_priv {
+	AVClass *class;
 	struct mrb rb;
 	struct AVStream *stream;
+	AVRational time_base;
+	int64_t last_pts;
 };
 
 static const struct AVOption options[] = {
+	{"tb", "Time base", offsetof(struct glgrab_priv, time_base), AV_OPT_TYPE_RATIONAL,
+	 {.dbl = 1.0 / AV_TIME_BASE}, DBL_MIN, DBL_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
 };
 
@@ -43,6 +47,7 @@ static const AVClass glgrab_class = {
 
 static int read_header(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
+	g->last_pts = -1;
 	avctx->ctx_flags = AVFMTCTX_NOHEADER;
 	return AVERROR(mrb_open(&g->rb, avctx->filename));
 }
@@ -66,7 +71,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 		if (!g->stream) {
 			AVStream *s = g->stream = avformat_new_stream(avctx, NULL);
 			AVCodecContext *codec = s->codec;
-			codec->time_base = s->time_base = AV_TIME_BASE_Q;
+			codec->time_base = s->time_base = g->time_base;
 			codec->codec_type = AVMEDIA_TYPE_VIDEO;
 			codec->codec_id = AV_CODEC_ID_RAWVIDEO;
 			codec->width = copy.width;
@@ -77,6 +82,11 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 		AVStream *s = g->stream;
 		AVCodecContext *codec = s->codec;
 		if (copy.width != codec->width || copy.height != codec->height)
+			continue;
+
+		const AVRational ns = {1, 1000000000};
+		int64_t pts = av_rescale_q_rnd(copy.ns, ns, s->time_base, AV_ROUND_NEAR_INF);
+		if (pts <= g->last_pts)
 			continue;
 
 		int size = avpicture_get_size(codec->pix_fmt, copy.width, copy.height);
@@ -93,8 +103,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			if (!mrb_check(&g->rb))
 				continue;
 
-			const AVRational ns = {1, 1000000000};
-			pkt->pts = av_rescale_q_rnd(copy.ns, ns, s->time_base, AV_ROUND_NEAR_INF);
+			pkt->pts = g->last_pts = pts;
 			pkt->dts = AV_NOPTS_VALUE;
 			pkt->stream_index = s->index;
 			pkt->flags = AV_PKT_FLAG_KEY;
@@ -115,6 +124,7 @@ struct AVInputFormat glgrab_avformat = {
 	.name = "glgrab",
 	.long_name = "GLGrab",
 	.flags = AVFMT_NOFILE | AVFMT_NOBINSEARCH | AVFMT_NOGENSEARCH | AVFMT_NO_BYTE_SEEK,
+	.priv_class = &glgrab_class,
 	.priv_data_size = sizeof(struct glgrab_priv),
 	.read_header = read_header,
 	.read_packet = read_packet,
