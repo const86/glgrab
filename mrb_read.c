@@ -32,7 +32,7 @@
 int mrb_open(struct mrb *q, const char *path) {
 	const long pagesize = sysconf(_SC_PAGESIZE);
 
-	const int fd = open(path, O_RDONLY);
+	const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOCTTY);
 	if (fd == -1)
 		goto err;
 

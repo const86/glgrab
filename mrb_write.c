@@ -53,7 +53,8 @@ int mrb_create(struct mrb *q, const char *path, uint64_t size, uint64_t max_item
 	size = roundup(size, ilog(pagesize));
 	max_item_size = roundup(max_item_size, ilog(pagesize));
 
-	const int fd = open(path, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IRGRP | S_IROTH);
+	const int fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC,
+			S_IRUSR | S_IRGRP | S_IROTH);
 	if (fd == -1)
 		goto err;
 
