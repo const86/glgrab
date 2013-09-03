@@ -41,6 +41,12 @@ static struct mrb rb;
 static time_t start_time;
 static const char *prefix;
 
+static uint64_t now(void) {
+	struct timespec ts = {0, 0};
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
 static unsigned long long str2int(const char *s, unsigned long long def) {
 	if (!s)
 		return def;
@@ -69,9 +75,7 @@ static bool init_mrb(void) {
 				"glgrab: failed to create ring buffer \"%s\" size %" PRIu64 ": %s\n",
 				name, size, strerror(err));
 		} else {
-			struct timespec ts;
-			clock_gettime(CLOCK_MONOTONIC, &ts);
-			start_time = ts.tv_sec;
+			start_time = now();
 			res = done;
 		}
 
@@ -127,11 +131,7 @@ void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLX
 		glPopAttrib();
 
 		real(dpy, drawable);
-
-		struct timespec ts;
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		frame->ns = (ts.tv_sec - start_time) * 1000000000ULL + ts.tv_nsec;
-
+		frame->ns = now() - start_time;
 		mrb_commit(&rb);
 	} else {
 		fprintf(stderr, "glgrab: failed to allocate frame %ux%u\n", width, height);
