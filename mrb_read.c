@@ -114,7 +114,8 @@ bool mrb_check(struct mrb *q) {
 
 bool mrb_reveal(struct mrb *q, const void **p) {
 	if (!mrb_check(q)) {
-		q->next = mrb_item_unpack(q, __atomic_load_n(&q->header->head, __ATOMIC_ACQUIRE));
+		volatile mrb_ptr *start = q->next.seq == 0 ? &q->header->tail : &q->header->head;
+		q->next = mrb_item_unpack(q, __atomic_load_n(start, __ATOMIC_ACQUIRE));
 	}
 
 	if (q->next.seq == 0 ||
