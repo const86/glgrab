@@ -89,11 +89,9 @@ static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
 }
 
 void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
-	static volatile int running = 0;
+	static volatile bool running = false;
 
-	int allowed = 0;
-	if (!prefix || !init_mrb() ||
-		!__atomic_compare_exchange_n(&running, &allowed, 1, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+	if (!prefix || !init_mrb() || __atomic_exchange_n(&running, true, __ATOMIC_ACQ_REL)) {
 		real(dpy, drawable);
 		return;
 	}
@@ -140,7 +138,7 @@ void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLX
 		real(dpy, drawable);
 	}
 
-	__atomic_store_n(&running, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&running, false, __ATOMIC_RELEASE);
 }
 
 static void __attribute__((constructor)) init(void) {
