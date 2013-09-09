@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(glgrab)
 
-add_definitions(-std=c99 -fvisibility=hidden)
+add_definitions(-std=c99 -pedantic -Wall -fvisibility=hidden)
 
 add_library(glgrab-audit SHARED audit.c)
 
