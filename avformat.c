@@ -29,15 +29,15 @@ struct glgrab_priv {
 	AVClass *class;
 	struct mrb rb;
 	struct AVStream *stream;
-	AVRational time_base;
+	AVRational framerate;
 	int64_t last_pts;
 	AVPacket pkt0;
 	uint64_t ts0;
 };
 
 static const struct AVOption options[] = {
-	{"tb", "Time base", offsetof(struct glgrab_priv, time_base), AV_OPT_TYPE_RATIONAL,
-	 {.dbl = 1.0 / AV_TIME_BASE}, DBL_MIN, DBL_MAX, AV_OPT_FLAG_DECODING_PARAM},
+	{"framerate", NULL, offsetof(struct glgrab_priv, framerate), AV_OPT_TYPE_RATIONAL,
+	 {.dbl = AV_TIME_BASE}, DBL_MIN, DBL_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
 };
 
@@ -84,7 +84,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 		if (!g->stream) {
 			AVStream *s = g->stream = avformat_new_stream(avctx, NULL);
 			AVCodecContext *codec = s->codec;
-			codec->time_base = s->time_base = g->time_base;
+			codec->time_base = s->time_base = av_inv_q(g->framerate);
 			codec->codec_type = AVMEDIA_TYPE_VIDEO;
 			codec->codec_id = AV_CODEC_ID_RAWVIDEO;
 			codec->width = copy.width;
@@ -98,7 +98,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			continue;
 
 		const AVRational ns = {1, 1000000000};
-		int64_t pts = av_rescale_q_rnd(copy.ns, ns, g->time_base, AV_ROUND_NEAR_INF);
+		int64_t pts = av_rescale_q_rnd(copy.ns, ns, s->time_base, AV_ROUND_NEAR_INF);
 		if (pts <= g->last_pts)
 			continue;
 
@@ -126,7 +126,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			pkt1.flags = AV_PKT_FLAG_KEY;
 
 			if (g->pkt0.pts == AV_NOPTS_VALUE) {
-				if (av_compare_ts(copy.ns, ns, pkt1.pts, g->time_base) <= 0) {
+				if (av_compare_ts(copy.ns, ns, pkt1.pts, s->time_base) <= 0) {
 					g->pkt0 = pkt1;
 					g->ts0 = copy.ns;
 					continue;
@@ -142,8 +142,8 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 
 				g->pkt0 = pkt1;
 				g->ts0 = copy.ns;
-			} else if (av_compare_ts(pkt1.pts, g->time_base, copy.ns, ns) < 0) {
-				uint64_t ts = av_rescale_q_rnd(pkt1.pts, g->time_base, ns, AV_ROUND_NEAR_INF);
+			} else if (av_compare_ts(pkt1.pts, s->time_base, copy.ns, ns) < 0) {
+				uint64_t ts = av_rescale_q_rnd(pkt1.pts, s->time_base, ns, AV_ROUND_NEAR_INF);
 
 				g->last_pts = pkt1.pts;
 				av_free_packet(pkt);
