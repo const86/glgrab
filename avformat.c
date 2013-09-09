@@ -69,7 +69,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			if (g->pkt0.pts != AV_NOPTS_VALUE) {
 				av_free_packet(pkt);
 				*pkt = g->pkt0;
-				memset(&g->pkt0, 0, sizeof(g->pkt0));
+				g->pkt0 = (AVPacket){0};
 				av_init_packet(&g->pkt0);
 				return 0;
 			}
@@ -104,7 +104,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 
 		int size = avpicture_get_size(codec->pix_fmt, copy.width, copy.height);
 
-		AVPacket pkt1;
+		AVPacket pkt1 = {0};
 		av_init_packet(&pkt1);
 		err = av_new_packet(&pkt1, size);
 		if (!err) {
@@ -121,7 +121,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			}
 
 			pkt1.pts = pts;
-			pkt1.dts = AV_NOPTS_VALUE;
+			pkt1.dts = pts;
 			pkt1.stream_index = s->index;
 			pkt1.flags = AV_PKT_FLAG_KEY;
 
@@ -156,7 +156,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 					av_free_packet(&g->pkt0);
 				}
 
-				memset(&g->pkt0, 0, sizeof(g->pkt0));
+				g->pkt0 = (AVPacket){0};
 				av_init_packet(&g->pkt0);
 			} else {
 				av_free_packet(&g->pkt0);
