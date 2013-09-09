@@ -28,11 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifdef __BIGGEST_ALIGNMENT__
-#define ALIGN __BIGGEST_ALIGNMENT__
-#else
-#define ALIGN 32
-#endif
+#define ALIGN 64
 
 static uint16_t ilog(uint64_t a) {
 	uint16_t l = 0;
@@ -82,16 +78,14 @@ int mrb_create(struct mrb *q, const char *path, uint64_t size, uint64_t max_item
 	if (close(fd) != 0)
 		goto err_munmap;
 
-	memset(q, 0, sizeof(*q));
-
 	q->header = (struct mrb_hdr *)addr;
 	q->base = addr + pagesize;
 
-	q->size = size;
-	q->header->max_item_size = q->max_item_size = max_item_size;
-
 	q->header->align_bits = q->align_bits = ilog(ALIGN);
 	q->header->off_bits = q->off_bits = (ilog(size - 1) + 1) - q->align_bits;
+	q->header->max_item_size = q->max_item_size = max_item_size;
+
+	q->size = size;
 	q->data_offset = roundup(sizeof(mrb_ptr), q->align_bits);
 
 	q->header->tail = mrb_item_pack(q, (struct mrb_item){1, 0});

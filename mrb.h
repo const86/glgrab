@@ -48,11 +48,11 @@ struct mrb {
 	char *base;
 
 	uint64_t size;
-	uint64_t max_item_size;
-
 	uint32_t data_offset;
+
 	int16_t align_bits;
 	int16_t off_bits;
+	uint64_t max_item_size;
 
 	struct mrb_item next;
 };
