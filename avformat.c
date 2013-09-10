@@ -30,6 +30,7 @@ struct glgrab_priv {
 	struct mrb rb;
 	struct AVStream *stream;
 	AVRational framerate;
+	int width, height;
 	int64_t last_pts;
 	AVPacket pkt0;
 	uint64_t ts0;
@@ -38,6 +39,8 @@ struct glgrab_priv {
 static const struct AVOption options[] = {
 	{"framerate", NULL, offsetof(struct glgrab_priv, framerate), AV_OPT_TYPE_RATIONAL,
 	 {.dbl = AV_TIME_BASE}, DBL_MIN, DBL_MAX, AV_OPT_FLAG_DECODING_PARAM},
+	{"video_size", NULL, offsetof(struct glgrab_priv, width), AV_OPT_TYPE_IMAGE_SIZE,
+	 {.str = NULL}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
 };
 
@@ -48,12 +51,36 @@ static const AVClass glgrab_class = {
 	.version = LIBAVUTIL_VERSION_INT
 };
 
+static int setup_stream(struct AVFormatContext *avctx) {
+	struct glgrab_priv *const g = avctx->priv_data;
+	AVStream *s = g->stream = avformat_new_stream(avctx, NULL);
+	if (s == NULL)
+		return AVERROR(ENOMEM);
+
+	AVCodecContext *codec = s->codec;
+	codec->time_base = s->time_base = av_inv_q(g->framerate);
+	codec->codec_type = AVMEDIA_TYPE_VIDEO;
+	codec->codec_id = AV_CODEC_ID_RAWVIDEO;
+	codec->width = g->width;
+	codec->height = g->height;
+	codec->pix_fmt = AV_PIX_FMT_BGRA;
+	return 0;
+}
+
 static int read_header(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
+	int rc = 0;
+
 	g->last_pts = -1;
 	av_init_packet(&g->pkt0);
-	avctx->ctx_flags = AVFMTCTX_NOHEADER;
-	return AVERROR(mrb_open(&g->rb, avctx->filename));
+
+	if (g->width > 0 && g->height > 0) {
+		rc = setup_stream(avctx);
+	} else {
+		avctx->ctx_flags = AVFMTCTX_NOHEADER;
+	}
+
+	return rc ? rc : AVERROR(mrb_open(&g->rb, avctx->filename));
 }
 
 static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
@@ -82,39 +109,53 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			continue;
 
 		if (!g->stream) {
-			AVStream *s = g->stream = avformat_new_stream(avctx, NULL);
-			AVCodecContext *codec = s->codec;
-			codec->time_base = s->time_base = av_inv_q(g->framerate);
-			codec->codec_type = AVMEDIA_TYPE_VIDEO;
-			codec->codec_id = AV_CODEC_ID_RAWVIDEO;
-			codec->width = copy.width;
-			codec->height = copy.height;
-			codec->pix_fmt = AV_PIX_FMT_BGRA;
+			g->width = copy.width;
+			g->height = copy.height;
+			err = setup_stream(avctx);
+			if (err) {
+				retry = false;
+				continue;
+			}
 		}
 
 		AVStream *s = g->stream;
 		AVCodecContext *codec = s->codec;
-		if (copy.width != codec->width || copy.height != codec->height)
-			continue;
 
 		const AVRational ns = {1, 1000000000};
 		int64_t pts = av_rescale_q_rnd(copy.ns, ns, s->time_base, AV_ROUND_NEAR_INF);
 		if (pts <= g->last_pts)
 			continue;
 
-		int size = avpicture_get_size(codec->pix_fmt, copy.width, copy.height);
+		int size = avpicture_get_size(codec->pix_fmt, codec->width, codec->height);
 
 		AVPacket pkt1 = {0};
 		av_init_packet(&pkt1);
 		err = av_new_packet(&pkt1, size);
 		if (!err) {
-			int stride = (copy.width + 1 & ~1) * 4;
-			AVPicture pic = {
-				{(uint8_t *)frame->data + stride * (copy.height - 1)},
-				{-stride}
-			};
+			AVPicture src;
+			avpicture_fill(&src, frame->data, codec->pix_fmt, (copy.width + 1) & ~1, copy.height);
+			src.data[0] += src.linesize[0] * (copy.height - 1);
+			src.linesize[0] = -src.linesize[0];
 
-			avpicture_layout(&pic, codec->pix_fmt, copy.width, copy.height, pkt1.data, size);
+			AVPicture pic;
+			avpicture_fill(&pic, pkt1.data, codec->pix_fmt, codec->width, codec->height);
+
+			int width = codec->width;
+			if (copy.width < width)
+				width = copy.width;
+
+			int height = codec->width;
+			if (copy.height < height)
+				height = copy.height;
+
+			if (copy.width < codec->width || copy.height < codec->height) {
+				memset(pkt1.data, 0, pkt1.size);
+				av_picture_copy(&pic, &src, codec->pix_fmt,
+						FFMIN(codec->width, copy.width), FFMIN(codec->height, copy.height));
+			} else {
+				av_picture_copy(&pic, &src, codec->pix_fmt, codec->width, codec->height);
+			}
+
 			if (!mrb_check(&g->rb)) {
 				av_free_packet(&pkt1);
 				continue;
