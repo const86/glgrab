@@ -109,7 +109,7 @@ bool mrb_check(struct mrb *q) {
 		return true;
 
 	struct mrb_item tail = mrb_item_unpack(q, __atomic_load_n(&q->header->tail, __ATOMIC_CONSUME));
-	return q->next.seq < tail.seq && tail.seq < head.seq;
+	return q->next.seq <= tail.seq && tail.seq < head.seq;
 }
 
 bool mrb_reveal(struct mrb *q, const void **p) {
