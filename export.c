@@ -168,6 +168,7 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 	AVOutputFormat *muxer = NULL;
 	AVDictionary *muxer_opts = NULL;
 
+	av_opt_set_defaults(swarm);
 	swarm->sws_flags = SWS_AREA;
 
 	for (int c; (c = getopt(argc, argv, "G:i:I:S:e:E:o:O:")) != -1;) {
@@ -216,10 +217,8 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 
 	av_log_set_level(swarm->log_level);
 
-	if (swarm->nb_threads < 1)
-		swarm->nb_threads = 1;
-
 	if (argc - optind != 2) {
+		av_log(swarm, AV_LOG_FATAL, "No input and/or output file specified\n");
 		rc = AVERROR(EINVAL);
 		goto fail;
 	}
