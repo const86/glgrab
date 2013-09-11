@@ -6,6 +6,16 @@ GLGRAB_MRB="/dev/shm/glgrab-$$.mrb"
 unset GLGRAB_BUFSIZE GLGRAB_MAXFRAME
 exec=""
 
+help() {
+	exec >&2
+	echo "Usage: $0 [OPTION...] [--] COMMAND [ARG...]"
+	echo "Options:"
+	echo " -o PATH  path to glgrab exchange buffer"
+	echo " -b SIZE  size of the buffer in MiB"
+	echo " -f SIZE  maximum size of single video frame in megapixels"
+	echo " -k       keep exchange buffer after exit"
+}
+
 while getopts b:f:ko: opt
 do
 	case "$opt" in
@@ -22,19 +32,20 @@ do
 			GLGRAB_MRB="${OPTARG}"
 			;;
 		?)
-			exec >&2
-			echo "Usage: $0 [OPTION...] [--] COMMAND [ARG...]"
-			echo "Options:"
-			echo " -o PATH  path to glgrab exchange buffer"
-			echo " -b SIZE  size of the buffer in MiB"
-			echo " -f SIZE  maximum size of single video frame in megapixels"
-			echo " -k       keep exchange buffer after exit"
+			help
 			exit 1
 			;;
 	esac
 done
 
 shift $((OPTIND - 1))
+
+if [ $# -lt 1 ]
+then
+	echo "glgrab: no command specified" >&2
+	help
+	exit 1
+fi
 
 if [ -e "${GLGRAB_MRB}" ]
 then
