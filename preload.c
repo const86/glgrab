@@ -31,7 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 #pragma GCC visibility push(default)
 
@@ -39,7 +38,7 @@
 
 static struct mrb rb;
 static time_t start_time;
-static const char *prefix;
+static const char *mrb_path;
 
 static uint64_t now(void) {
 	struct timespec ts = {0, 0};
@@ -65,15 +64,12 @@ static bool init_mrb(void) {
 	if (__atomic_compare_exchange_n(&state, &res, going, false, __ATOMIC_CONSUME, __ATOMIC_CONSUME)) {
 		res = failed;
 
-		char name[strlen(prefix) + 30];
-		snprintf(name, sizeof(name), "%s-%llu.mrb", prefix, (unsigned long long)getpid());
-
 		uint64_t size = str2int(getenv("GLGRAB_BUFSIZE"), DEFAULT_MRB_SIZE);
-		int err = mrb_create(&rb, name, size, str2int(getenv("GLGRAB_MAXFRAME"), size));
+		int err = mrb_create(&rb, mrb_path, size, str2int(getenv("GLGRAB_MAXFRAME"), size));
 		if (err) {
 			fprintf(stderr,
 				"glgrab: failed to create ring buffer \"%s\" size %" PRIu64 ": %s\n",
-				name, size, strerror(err));
+				mrb_path, size, strerror(err));
 		} else {
 			start_time = now();
 			res = done;
@@ -95,7 +91,7 @@ static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
 void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
 	static volatile bool running = false;
 
-	if (!prefix || !init_mrb() || __atomic_exchange_n(&running, true, __ATOMIC_ACQ_REL)) {
+	if (!mrb_path || !init_mrb() || __atomic_exchange_n(&running, true, __ATOMIC_ACQ_REL)) {
 		real(dpy, drawable);
 		return;
 	}
@@ -142,7 +138,7 @@ void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLX
 }
 
 static void __attribute__((constructor)) init(void) {
-	if ((prefix = getenv("GLGRAB_PREFIX"))) {
+	if ((mrb_path = getenv("GLGRAB_MRB"))) {
 		void *h = dlopen(NULL, RTLD_LAZY);
 
 		if (h) {
