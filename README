@@ -1,0 +1,63 @@
+                              GLGRAB
+
+GLGrab is an OpenGL image grabber. This package contains
+ - The grabber plugin itself and script for easy dealing with it.
+ - FFmpeg support for GLGrab as video input.
+ - Special tool glgrab-export for multithreaded encoding of grabbed video.
+
+ * HOW IT WORKS *
+
+GLGrab injects special plugin into an OpenGL application. That library catches
+every rendered frame just before it goes to the display. Frames are stored
+in a shared memory buffer visible as a file. You may take frames from that
+buffer either with ffmpeg or glgrab-export, encode, and store into a file in
+virtually any format.
+
+ * HOW TO RUN *
+
+Simply type
+
+  glgrab app
+
+GLGrab will print path to file where it will store grabbed frames, and start
+the app. Remember it, you will need to pass it to ffmpeg as an input file.
+File won't be created until the application starts actual OpenGL rendering.
+
+There are several options for fine tuning. With '-o path' you change the path
+to glgrab buffer. It's better to place it on tmpfs. By default, file is deleted
+after the application exits. If you want to keep it for some reason, tell -k.
+
+Using -b option you may change size of the buffer. Default is 256 MiB. Larger
+buffer hold more frames and thus decreases the chance of frame dropping in
+case of accidental lags in the encoder (i.e. ffmpeg).
+
+(Don't read this paragraph.) The last option -f is to minimize address space
+pollution caused by glgrab. Perhaps it may be needed only on 32-bit systems.
+This option limits maximum size of single frame measured in megapixels (so,
+1280x720 is approximately 1 megapixel, round up your calculations). Larger
+frames may be silently dropped. However they may succeed, don't rely on this
+limit. Internally, frame size limit is size of the buffer subregion used to
+warp the linear buffer into a circular buffer. Actual memory consumed by glgrab
+is still limited by buffer size itself. But consumed address space is buffer
+size plus maximum frame size.
+
+ * HOW TO SAVE VIDEO *
+
+The glgrab-ffmpeg tool provides the same interface as vanilla ffmpeg. Refer to
+FFmpeg's manuals at this point. Example:
+
+  glgrab-ffmpeg -f glgrab -r 30 -s 1024x768 -i <glgrab buffer> \
+      -c:v libx264 -qp 0 video.mov
+
+FFmpeg doesn't deal with multiple CPUs very well. Attempting to grab large
+and/or high rate video you may be limited by speed of single CPU core. To
+overtake this limitation use the glgrab-export tool. It's based on FFmpeg
+libraries but isn't as feature rich as ffmpeg tool. It can take single
+video only stream, re-encode it in intra-only mode and store to a file.
+Interface is somewhat similar to ffmpeg. Last example eating 4 CPU cores:
+
+  glgrab-export -i glgrab -I framerate=30,video_size=1024x768 <glgrab buffer> \
+      -e libx264 -E qp=0 video.mov -G threads=4
+
+Configuration passed via -I, -E, and -O options is the same as in ffmpeg.
+Refer to `ffmpeg -help full' for the list of those options.
