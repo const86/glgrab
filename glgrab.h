@@ -35,7 +35,7 @@ struct glgrab_frame {
 	uint64_t ns; ///< Timestamp in nanoseconds starting from unknown point
 	uint32_t height; ///< Height of image
 	uint32_t width; ///< Width of image
-	char data[] __attribute__((aligned(8)));
+	unsigned char data[] __attribute__((aligned(8)));
 };
 
 extern struct AVInputFormat glgrab_avformat;
