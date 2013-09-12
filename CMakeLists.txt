@@ -37,7 +37,7 @@ set_target_properties(glgrab-export PROPERTIES
   LINK_FLAGS "-pthread")
 
 configure_file(glgrab.in glgrab ESCAPE_QUOTES @ONLY)
-configure_file(glgrab-ffmpeg.in glgrab-ffmpeg ESCAPE_QUOTES @ONLY)
+configure_file(glgrab-av.in glgrab-av ESCAPE_QUOTES @ONLY)
 
 install(TARGETS glgrab-audit glgrab-preload glgrab-avformat glgrab-export
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -45,7 +45,7 @@ install(TARGETS glgrab-audit glgrab-preload glgrab-avformat glgrab-export
 )
 
 install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/glgrab
-  ${CMAKE_CURRENT_BINARY_DIR}/glgrab-ffmpeg
+  ${CMAKE_CURRENT_BINARY_DIR}/glgrab-av
   DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 

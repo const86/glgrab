@@ -52,10 +52,10 @@ size plus maximum frame size.
 
  * HOW TO SAVE VIDEO *
 
-The glgrab-ffmpeg tool provides the same interface as vanilla ffmpeg. Refer to
-FFmpeg's manuals at this point. Example:
+The glgrab-av behind ffmpeg provides the same interface as vanilla ffmpeg.
+Refer to FFmpeg's manuals at this point. Example:
 
-  glgrab-ffmpeg -f glgrab -r 30 -s 1024x768 -i <glgrab buffer> \
+  glgrab-av ffmpeg -f glgrab -r 30 -s 1024x768 -i <glgrab buffer> \
       -c:v libx264 -qp 0 video.mov
 
 FFmpeg doesn't deal with multiple CPUs very well. Attempting to grab large
