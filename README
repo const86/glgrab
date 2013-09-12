@@ -5,6 +5,15 @@ GLGrab is an OpenGL image grabber. This package contains
  - FFmpeg support for GLGrab as video input.
  - Special tool glgrab-export for multithreaded encoding of grabbed video.
 
+ * HOW TO INSTALL *
+
+You will need CMake and development packages of FFmpeg and OpenGL with GLX.
+Build & install is pretty standard for CMake:
+
+  cmake <path to glgrab sources> && make install
+
+Though it's better to wrap it in your distro package.
+
  * HOW IT WORKS *
 
 GLGrab injects special plugin into an OpenGL application. That library catches
