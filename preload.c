@@ -88,7 +88,7 @@ static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
-void hook_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
+void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
 	static volatile bool running = false;
 
 	if (!mrb_path || !init_mrb() || __atomic_exchange_n(&running, true, __ATOMIC_ACQ_REL)) {
@@ -142,7 +142,7 @@ static void __attribute__((constructor)) init(void) {
 		void *h = dlopen(NULL, RTLD_LAZY);
 
 		if (h) {
-			if (!dlsym(h, "hook_glXSwapBuffers"))
+			if (!dlsym(h, "glgrab_glXSwapBuffers"))
 				fprintf(stderr, "glgrab: failed to bind hook: %s\n", dlerror());
 
 			dlclose(h);

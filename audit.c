@@ -30,11 +30,11 @@ typedef void (*glXSwapBuffers_t)(Display *, GLXDrawable);
 static glXSwapBuffers_t real_glXSwapBuffers;
 
 typedef void (*glXSwapBuffers_hook_t)(glXSwapBuffers_t, Display *, GLXDrawable);
-static glXSwapBuffers_hook_t hook_glXSwapBuffers;
+static glXSwapBuffers_hook_t glgrab_glXSwapBuffers;
 
 static void fake_glXSwapBuffers(Display *dpy, GLXDrawable drawable) {
-	if (hook_glXSwapBuffers) {
-		hook_glXSwapBuffers(real_glXSwapBuffers, dpy, drawable);
+	if (glgrab_glXSwapBuffers) {
+		glgrab_glXSwapBuffers(real_glXSwapBuffers, dpy, drawable);
 	} else {
 		real_glXSwapBuffers(dpy, drawable);
 	}
@@ -96,8 +96,8 @@ uintptr_t la_symbind(ElfW(Sym) *sym, unsigned int ndx, uintptr_t *refcook,
 	} else if (strcmp(symname, "glXGetProcAddressARB") == 0) {
 		real_glXGetProcAddressARB = (PFNGLXGETPROCADDRESSPROC)addr;
 		addr = (uintptr_t)&fake_glXGetProcAddressARB;
-	} else if (strcmp(symname, "hook_glXSwapBuffers") == 0) {
-		hook_glXSwapBuffers = (glXSwapBuffers_hook_t)addr;
+	} else if (strcmp(symname, "glgrab_glXSwapBuffers") == 0) {
+		glgrab_glXSwapBuffers = (glXSwapBuffers_hook_t)addr;
 	}
 
 	return addr;
