@@ -58,6 +58,25 @@ unsigned la_version(unsigned version) {
 }
 
 unsigned la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
+	ElfW(Dyn) *last, *pltrelsz = NULL;
+	for (last = map->l_ld; last->d_tag != DT_NULL; ++last) {
+		if (last->d_tag == DT_PLTRELSZ)
+			pltrelsz = last;
+	}
+
+	if (pltrelsz == NULL) {
+		pltrelsz = last++;
+		last->d_tag = DT_NULL;
+		pltrelsz->d_tag = DT_PLTRELSZ;
+		pltrelsz->d_un.d_val = 0;
+
+		ElfW(Dyn) **p = &map->l_ld;
+		while (*p < map->l_ld || *p > last)
+			++p;
+
+		p[DT_PLTRELSZ - map->l_ld->d_tag] = pltrelsz;
+	}
+
 	return LA_FLG_BINDTO | LA_FLG_BINDFROM;
 }
 
