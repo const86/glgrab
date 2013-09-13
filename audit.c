@@ -70,7 +70,7 @@ unsigned la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
 		pltrelsz->d_tag = DT_PLTRELSZ;
 		pltrelsz->d_un.d_val = 0;
 
-		ElfW(Dyn) **p = &map->l_ld;
+		ElfW(Dyn) **p = &map->l_ld + 1;
 		while (*p < map->l_ld || *p > last)
 			++p;
 
