@@ -43,7 +43,7 @@ static const char *mrb_path;
 static uint64_t now(void) {
 	struct timespec ts = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_sec * 1000000000 + ts.tv_nsec;
+	return ts.tv_sec * UINT64_C(1000000000) + ts.tv_nsec;
 }
 
 static unsigned long long str2int(const char *s, unsigned long long def) {
