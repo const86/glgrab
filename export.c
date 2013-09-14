@@ -297,10 +297,21 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 	if (swarm->muxer->oformat->flags & AVFMT_GLOBALHEADER)
 		swarm->ostream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
 
-	if (swarm->pix_fmt != AV_PIX_FMT_NONE)
+	if (swarm->pix_fmt != AV_PIX_FMT_NONE) {
 		swarm->ostream->codec->pix_fmt = swarm->pix_fmt;
-	else
-		swarm->ostream->codec->pix_fmt = swarm->istream->codec->pix_fmt;
+	} else if (encoder->pix_fmts) {
+		enum AVPixelFormat best = encoder->pix_fmts[0];
+
+		for (const enum AVPixelFormat *p = encoder->pix_fmts; *p != AV_PIX_FMT_NONE; ++p) {
+			if (*p != swarm->istream->codec->pix_fmt)
+				continue;
+
+			best = *p;
+			break;
+		}
+
+		swarm->ostream->codec->pix_fmt = best;
+	}
 
 	swarm->threads = av_calloc(swarm->nb_threads, sizeof(struct swarm_thread));
 	if (swarm->threads == NULL) {
