@@ -41,19 +41,23 @@ static void swarm_help(const char *name) {
 		" -G  general options\n"
 		" -i  demuxer name (may be guessed)\n"
 		" -I  demuxer options\n"
-		" -S  scaler flags (like neighbor or area+print_info)\n"
+		" -S  scaler options\n"
 		" -e  encoder name\n"
 		" -E  encoder options\n"
 		" -o  muxer name (may be guessed)\n"
 		" -O  muxer options\n"
 		"\n"
+		"Uppercased options are comma separated key=value pairs.\n"
+		"\n"
 		"General options:\n"
 		" threads    number of threads\n"
-		" pix_fmt    encoded picture format\n"
 		" log_level  verbosity (like debug or verbose)\n"
 		" progress   progress report interval in seconds, disable if negative\n"
 		"\n"
-		"Encoder, (de)muxer, and general options are comma separated key=value pairs.\n"
+		"Scaler options:\n"
+		" pix_fmt    target picture format\n"
+		" size       target picture size\n"
+		" sws_flags  tune scaler (like area or neighbor+print_info)\n"
 		"\n",
 		name);
 }
@@ -65,10 +69,17 @@ struct swarm_item {
 	volatile bool ready;
 };
 
+struct swarm_scaler {
+	const AVClass *class;
+	struct SwsContext *ctx;
+	enum AVPixelFormat pix_fmt;
+	int width, height;
+};
+
 struct swarm_thread {
 	pthread_t tid;
 	struct swarm *swarm;
-	struct SwsContext *scaler;
+	struct swarm_scaler scaler;
 	AVCodecContext *encoder;
 	struct swarm_item **ptail;
 	struct swarm_item *head;
@@ -101,7 +112,6 @@ struct swarm {
 	struct swarm_thread *threads;
 	struct swarm_progress progress;
 	int log_level;
-	int sws_flags;
 	enum AVPixelFormat pix_fmt;
 	int nb_threads;
 };
@@ -127,11 +137,35 @@ static void swarm_progress_report(int sig, siginfo_t *si, void *ctx) {
 	write(STDERR_FILENO, buf, FFMIN(n, sizeof(buf) - 1));
 }
 
+static void *swarm_scaler_child_next(void *obj, void *prev) {
+	struct swarm_scaler *scaler = obj;
+	return prev == NULL ? scaler->ctx : NULL;
+}
+
+static const struct AVOption swarm_scaler_options[] = {
+	{"pix_fmt", NULL, offsetof(struct swarm_scaler, pix_fmt), AV_OPT_TYPE_PIXEL_FMT, {.i64 = AV_PIX_FMT_NONE}},
+	{"size", NULL, offsetof(struct swarm_scaler, width), AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}},
+	{NULL}
+};
+
+static const struct AVClass swarm_scaler_class = {
+	.class_name = "swarm_scaler",
+	.item_name = av_default_item_name,
+	.option = swarm_scaler_options,
+	.version = LIBAVUTIL_VERSION_INT,
+	.child_next = swarm_scaler_child_next
+};
+
 static int swarm_thread_init(struct swarm_thread *t, struct swarm *swarm,
-			AVCodec *encoder, AVDictionary *encoder_opts_tmpl) {
+	AVDictionary *sws_opts_tmpl, AVCodec *encoder, AVDictionary *encoder_opts_tmpl) {
 	int rc = 0;
+	AVCodecContext *decoder = swarm->istream->codec;
+
 	AVDictionary *encoder_opts = NULL;
 	av_dict_copy(&encoder_opts, encoder_opts_tmpl, 0);
+
+	AVDictionary *sws_opts = NULL;
+	av_dict_copy(&sws_opts, sws_opts_tmpl, 0);
 
 	t->swarm = swarm;
 	t->ptail = &t->head;
@@ -146,55 +180,91 @@ static int swarm_thread_init(struct swarm_thread *t, struct swarm *swarm,
 	if (rc != 0)
 		goto fail;
 
+	t->scaler.class = &swarm_scaler_class;
+	av_opt_set_defaults(&t->scaler);
+
+	t->scaler.ctx = sws_alloc_context();
+	if (t->scaler.ctx == NULL) {
+		rc = AVERROR(ENOMEM);
+		goto fail;
+	}
+
+	if (encoder->pix_fmts != NULL) {
+		t->scaler.pix_fmt = encoder->pix_fmts[0];
+
+		for (const enum AVPixelFormat *p = encoder->pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+			if (*p == decoder->pix_fmt) {
+				t->scaler.pix_fmt = *p;
+				break;
+			}
+		}
+	}
+
+	t->scaler.width = decoder->width;
+	t->scaler.height = decoder->height;
+	av_opt_set_dict(&t->scaler, &sws_opts);
+
+	av_opt_set_int(t->scaler.ctx, "sws_flags", SWS_AREA, 0);
+	av_opt_set_int(t->scaler.ctx, "dstw", t->scaler.width, 0);
+	av_opt_set_int(t->scaler.ctx, "dsth", t->scaler.height, 0);
+	av_opt_set_int(t->scaler.ctx, "dst_format", t->scaler.pix_fmt, 0);
+	av_opt_set_dict(t->scaler.ctx, &sws_opts);
+	av_dict_free(&sws_opts);
+
+	av_opt_set_int(t->scaler.ctx, "srcw", decoder->width, 0);
+	av_opt_set_int(t->scaler.ctx, "srch", decoder->height, 0);
+	av_opt_set_int(t->scaler.ctx, "src_format", decoder->pix_fmt, 0);
+
+	rc = sws_init_context(t->scaler.ctx, NULL, NULL);
+	if (rc != 0)
+		goto fail;
+
+	int64_t dstw = t->scaler.width, dsth = t->scaler.height, dst_format = t->scaler.pix_fmt;
+	av_opt_get_int(t->scaler.ctx, "dstw", 0, &dstw);
+	av_opt_get_int(t->scaler.ctx, "dsth", 0, &dsth);
+	av_opt_get_int(t->scaler.ctx, "dst_format", 0, &dst_format);
+
+	t->encoder->width = dstw;
+	t->encoder->height = dsth;
+	t->encoder->pix_fmt = dst_format;
+
 	rc = avcodec_open2(t->encoder, encoder, &encoder_opts);
 	if (rc != 0)
 		goto fail;
 
 	av_dict_free(&encoder_opts);
-
-	AVCodecContext *decoder = swarm->istream->codec;
-	if (t->encoder->pix_fmt != decoder->pix_fmt) {
-		t->scaler = sws_getCachedContext(NULL,
-						decoder->width, decoder->height, decoder->pix_fmt,
-						t->encoder->width, t->encoder->height, t->encoder->pix_fmt,
-						swarm->sws_flags, NULL, NULL, NULL);
-		if (t->scaler == NULL) {
-			rc = AVERROR(ENOMEM);
-			goto fail;
-		}
-	}
-
 	return 0;
 
 fail:
+	sws_freeContext(t->scaler.ctx);
 	avcodec_close(t->encoder);
 	av_freep(&t->encoder);
+	av_dict_free(&sws_opts);
 	av_dict_free(&encoder_opts);
 	return rc;
 }
 
 static void swarm_thread_destroy(struct swarm_thread *t) {
-	sws_freeContext(t->scaler);
+	sws_freeContext(t->scaler.ctx);
+	av_opt_free(&t->scaler);
+
 	avcodec_close(t->encoder);
 	av_freep(&t->encoder);
 }
 
 static int swarm_init(struct swarm *swarm, int argc, char **argv) {
-	const AVClass *sws_class = sws_get_class();
-	const AVOption *sws_flags_opt = av_opt_find2(&sws_class, "sws_flags", NULL, 0, 0, NULL);
-
 	int rc = 0;
 	int nb_threads = 0;
 
 	AVInputFormat *demuxer = NULL;
 	AVDictionary *demuxer_opts = NULL;
+	AVDictionary *sws_opts = NULL;
 	AVCodec *encoder = NULL;
 	AVDictionary *encoder_opts = NULL;
 	AVOutputFormat *muxer = NULL;
 	AVDictionary *muxer_opts = NULL;
 
 	av_opt_set_defaults(swarm);
-	swarm->sws_flags = SWS_AREA;
 
 	for (int c; (c = getopt(argc, argv, "G:i:I:S:e:E:o:O:")) != -1;) {
 		switch (c) {
@@ -212,7 +282,7 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 			rc = av_dict_parse_string(&demuxer_opts, optarg, "=", ",", 0);
 			break;
 		case 'S':
-			rc = av_opt_eval_flags(&sws_class, sws_flags_opt, optarg, &swarm->sws_flags);
+			rc = av_dict_parse_string(&sws_opts, optarg, "=", ",", 0);
 			break;
 		case 'e':
 			encoder = avcodec_find_encoder_by_name(optarg);
@@ -291,27 +361,9 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 	swarm->ostream->codec->thread_count = 1;
 	swarm->ostream->codec->gop_size = 1;
 	swarm->ostream->codec->time_base = swarm->istream->time_base;
-	swarm->ostream->codec->width = swarm->istream->codec->width;
-	swarm->ostream->codec->height = swarm->istream->codec->height;
 
 	if (swarm->muxer->oformat->flags & AVFMT_GLOBALHEADER)
 		swarm->ostream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
-
-	if (swarm->pix_fmt != AV_PIX_FMT_NONE) {
-		swarm->ostream->codec->pix_fmt = swarm->pix_fmt;
-	} else if (encoder->pix_fmts) {
-		enum AVPixelFormat best = encoder->pix_fmts[0];
-
-		for (const enum AVPixelFormat *p = encoder->pix_fmts; *p != AV_PIX_FMT_NONE; ++p) {
-			if (*p != swarm->istream->codec->pix_fmt)
-				continue;
-
-			best = *p;
-			break;
-		}
-
-		swarm->ostream->codec->pix_fmt = best;
-	}
 
 	swarm->threads = av_calloc(swarm->nb_threads, sizeof(struct swarm_thread));
 	if (swarm->threads == NULL) {
@@ -320,10 +372,13 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 	}
 
 	for (; nb_threads < swarm->nb_threads; nb_threads++) {
-		rc = swarm_thread_init(&swarm->threads[nb_threads], swarm, encoder, encoder_opts);
+		rc = swarm_thread_init(&swarm->threads[nb_threads], swarm, sws_opts, encoder, encoder_opts);
 		if (rc != 0)
 			goto fail;
 	}
+
+	av_dict_free(&sws_opts);
+	av_dict_free(&encoder_opts);
 
 	avcodec_close(swarm->ostream->codec);
 	rc = avcodec_copy_context(swarm->ostream->codec, swarm->threads[0].encoder);
@@ -466,11 +521,6 @@ static int swarm_encode(struct swarm_thread *t, struct swarm_item *item, AVFrame
 }
 
 static int swarm_process_frame(struct swarm_thread *t, struct swarm_item *item, AVFrame *frame) {
-	frame->pict_type = AV_PICTURE_TYPE_I;
-
-	if (t->scaler == NULL)
-		return swarm_encode(t, item, frame);
-
 	int rc = 0;
 	AVFrame *frame2 = avcodec_alloc_frame();
 	if (frame2 == NULL) {
@@ -479,15 +529,15 @@ static int swarm_process_frame(struct swarm_thread *t, struct swarm_item *item, 
 	}
 
 	AVPicture *pic = (AVPicture *)frame2;
-	rc = avpicture_alloc(pic, t->encoder->pix_fmt, frame->width, frame->height);
+	rc = avpicture_alloc(pic, t->encoder->pix_fmt, t->encoder->width, t->encoder->height);
 	if (rc != 0)
 		goto fail;
 
-	sws_scale(t->scaler, (void *)frame->data, frame->linesize,
+	sws_scale(t->scaler.ctx, (void *)frame->data, frame->linesize,
 		0, frame->height, frame2->data, frame2->linesize);
 
 	frame2->pts = frame->pts;
-	frame2->pict_type = frame->pict_type;
+	frame2->pict_type = AV_PICTURE_TYPE_I;
 	rc = swarm_encode(t, item, frame2);
 	avpicture_free(pic);
 
