@@ -31,7 +31,7 @@ add_executable(glgrab-export
   avformat.c
   mrb_read.c
 )
-target_link_libraries(glgrab-export avcodec avformat avutil avdevice swscale)
+target_link_libraries(glgrab-export avcodec avformat avutil avdevice swscale rt)
 set_target_properties(glgrab-export PROPERTIES
   COMPILE_FLAGS "-pthread"
   LINK_FLAGS "-pthread")

@@ -20,6 +20,7 @@
 
 #define _XOPEN_SOURCE 700
 
+#include <float.h>
 #include <libavcodec/avcodec.h>
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
@@ -50,6 +51,7 @@ static void swarm_help(const char *name) {
 		" threads    number of threads\n"
 		" pix_fmt    encoded picture format\n"
 		" log_level  verbosity (like debug or verbose)\n"
+		" progress   progress report interval in seconds, disable if negative\n"
 		"\n"
 		"Encoder, (de)muxer, and general options are comma separated key=value pairs.\n"
 		"\n",
@@ -90,6 +92,13 @@ struct swarm {
 	int sws_flags;
 	enum AVPixelFormat pix_fmt;
 	int nb_threads;
+
+	timer_t progress_timer;
+	float progress;
+	int64_t progress_ts;
+	unsigned long progress_decoded;
+	unsigned long progress_encoded;
+	unsigned long progress_written;
 };
 
 static void (*orig_int_handler)(int);
@@ -100,6 +109,17 @@ static void int_handler(int sig) {
 	const char msg[] = "Interrupt caught! Second interrupt will corrupt output file.\n";
 	write(STDERR_FILENO, msg, sizeof(msg) - 1);
 	sigset(sig, orig_int_handler);
+}
+
+static void swarm_report_progress(int sig, siginfo_t *si, void *ctx) {
+	struct swarm *swarm = si->si_value.sival_ptr;
+	char buf[100];
+	int n = snprintf(buf, sizeof(buf), "time: %s  frames: %lu >= %lu >= %lu\x1b[K\r",
+		av_ts2timestr(__atomic_load_n(&swarm->progress_ts, __ATOMIC_RELAXED), &swarm->istream->time_base),
+		__atomic_load_n(&swarm->progress_decoded, __ATOMIC_RELAXED),
+		__atomic_load_n(&swarm->progress_encoded, __ATOMIC_RELAXED),
+		__atomic_load_n(&swarm->progress_written, __ATOMIC_RELAXED));
+	write(STDERR_FILENO, buf, FFMIN(n, sizeof(buf) - 1));
 }
 
 static int swarm_thread_init(struct swarm_thread *t, struct swarm *swarm,
@@ -305,20 +325,36 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 		goto fail;
 	}
 
-	swarm->demuxer_lock = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
+	if (swarm->progress > 0) {
+		struct sigevent sev = {
+			.sigev_notify = SIGEV_SIGNAL,
+			.sigev_signo = SIGALRM,
+			.sigev_value = {
+				.sival_ptr = swarm
+			}
+		};
+
+		rc = timer_create(CLOCK_MONOTONIC, &sev, &swarm->progress_timer);
+		if (rc != 0) {
+			rc = AVERROR(rc);
+			goto fail;
+		}
+	}
 
 	rc = pthread_spin_init(&swarm->muxer_lock, 0);
 	if (rc != 0) {
 		rc = AVERROR(rc);
-		goto fail;
+		goto fail_timer;
 	}
 
+	swarm->demuxer_lock = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
 	return 0;
+
+fail_timer:
+	timer_delete(swarm->progress_timer);
 
 fail:
 	av_log(swarm, AV_LOG_FATAL, "swarm_init: %s\n", av_err2str(rc));
-
-	pthread_mutex_destroy(&swarm->demuxer_lock);
 
 	for (int i = 0; i < nb_threads; i++) {
 		swarm_thread_destroy(&swarm->threads[i]);
@@ -353,7 +389,17 @@ static int swarm_close(struct swarm *swarm) {
 		swarm_thread_destroy(&swarm->threads[i]);
 	}
 
-	av_freep(&swarm->tail);
+	if (swarm->progress > 0)
+		timer_delete(swarm->progress_timer);
+
+	while (swarm->head != NULL) {
+		struct swarm_item *item = swarm->head;
+		swarm->head = item->next;
+
+		av_free_packet(&item->pkt);
+		av_free(item);
+	}
+
 	av_freep(&swarm->threads);
 
 	pthread_mutex_destroy(&swarm->demuxer_lock);
@@ -396,6 +442,7 @@ static int swarm_encode(struct swarm_thread *t, struct swarm_item *item, AVFrame
 	if (t->head == NULL)
 		t->ptail = &t->head;
 
+	__atomic_fetch_add(&t->swarm->progress_encoded, 1, __ATOMIC_RELAXED);
 	__atomic_store_n(&item->ready, true, __ATOMIC_RELEASE);
 	return 0;
 }
@@ -457,7 +504,9 @@ static int swarm_read_frame(struct swarm *swarm, AVPacket *pkt, struct swarm_ite
 	} else if (rc != 0) {
 		goto fail;
 	} else {
+		__atomic_store_n(&swarm->progress_ts, pkt0.pts, __ATOMIC_RELAXED);
 		av_free_packet(pkt);
+
 		if (swarm->istream->codec->codec_id == AV_CODEC_ID_RAWVIDEO &&
 			swarm->istream->codec->pix_fmt != AV_PIX_FMT_PAL8) {
 			*pkt = pkt0;
@@ -508,6 +557,7 @@ static int swarm_read_frame(struct swarm *swarm, AVPacket *pkt, struct swarm_ite
 	*pitem = item;
 	*pframe = frame;
 	frame = NULL;
+	__atomic_fetch_add(&swarm->progress_decoded, 1, __ATOMIC_RELAXED);
 
 fail:
 	if (rc != 0)
@@ -547,6 +597,10 @@ static int swarm_write_frames(struct swarm *swarm) {
 
 			av_log(swarm, AV_LOG_DEBUG, "writing size:%d pts:%s\n", pkt->size, av_ts2str(pkt->pts));
 			rc = av_write_frame(swarm->muxer, pkt);
+			if (rc != 0)
+				break;
+
+			__atomic_fetch_add(&swarm->progress_written, 1, __ATOMIC_RELAXED);
 		}
 
 		av_free_packet(pkt);
@@ -605,6 +659,16 @@ static void *swarm_thread_main(void *arg) {
 }
 
 static void swarm_run(struct swarm *swarm) {
+	if (swarm->progress > 0) {
+		struct timespec ts = {swarm->progress};
+		ts.tv_nsec = FFMIN((swarm->progress - ts.tv_sec) * 1e9, 999999999);
+
+		struct itimerspec val = {ts, ts};
+		if (timer_settime(swarm->progress_timer, 0, &val, NULL) != 0)
+			av_log(swarm, AV_LOG_WARNING, "timer_settime(%lu.%09ld): %s\n",
+				ts.tv_sec, ts.tv_nsec, av_err2str(AVERROR(errno)));
+	}
+
 	int nb_threads;
 
 	for (nb_threads = 1; nb_threads < swarm->nb_threads; nb_threads++) {
@@ -625,6 +689,12 @@ static void swarm_run(struct swarm *swarm) {
 		if (rc != 0)
 			av_log(swarm, AV_LOG_ERROR, "pthread_join: %s\n", av_err2str(AVERROR(rc)));
 	}
+
+	if (swarm->progress > 0) {
+		struct itimerspec val = {{0, 0}};
+		if (timer_settime(swarm->progress_timer, 0, &val, NULL) != 0)
+			av_log(swarm, AV_LOG_WARNING, "timer_settime(0): %s\n", av_err2str(AVERROR(errno)));
+	}
 }
 
 int main(int argc, char **argv) {
@@ -636,6 +706,8 @@ int main(int argc, char **argv) {
 	const struct AVOption swarm_options[] = {
 		{"threads", NULL, offsetof(struct swarm, nb_threads), AV_OPT_TYPE_INT, {.i64 = 1}, 1, INT_MAX},
 		{"pix_fmt", NULL, offsetof(struct swarm, pix_fmt), AV_OPT_TYPE_PIXEL_FMT, {.i64 = AV_PIX_FMT_NONE}},
+		{"progress", NULL, offsetof(struct swarm, progress), AV_OPT_TYPE_FLOAT,
+		 {.dbl = 1}, -FLT_MAX, FLT_MAX},
 
 		{"log_level", NULL, offsetof(struct swarm, log_level), AV_OPT_TYPE_INT,
 		 {.i64 = AV_LOG_INFO}, AV_LOG_QUIET, AV_LOG_DEBUG, .unit = "log_level"},
@@ -660,6 +732,13 @@ int main(int argc, char **argv) {
 	struct swarm swarm = {
 		.class = &swarm_class
 	};
+
+	struct sigaction sa = {
+		.sa_sigaction = &swarm_report_progress,
+		.sa_flags = SA_RESTART | SA_SIGINFO
+	};
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGALRM, &sa, NULL);
 
 	orig_int_handler = sigset(SIGINT, int_handler);
 	int rc = swarm_init(&swarm, argc, argv);
