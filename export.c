@@ -314,6 +314,7 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 
 	if (argc - optind != 2) {
 		av_log(swarm, AV_LOG_FATAL, "No input and/or output file specified\n");
+		swarm_help(argv[0]);
 		rc = AVERROR(EINVAL);
 		goto fail;
 	}
