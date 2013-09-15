@@ -157,6 +157,21 @@ static const struct AVClass swarm_scaler_class = {
 	.child_next = swarm_scaler_child_next
 };
 
+static void swarm_log_bad_options(void *obj, AVDictionary *d, const char *s) {
+	if (d == NULL)
+		return;
+
+	char buf[200];
+	ptrdiff_t n = 0;
+
+	AVDictionaryEntry *p = NULL;
+	while (n < sizeof(buf) && (p = av_dict_get(d, "", p, AV_DICT_IGNORE_SUFFIX)) != NULL) {
+		n += snprintf(buf + n, sizeof(buf) - n, " %s=%s", p->key, p->value);
+	}
+
+	av_log(obj, AV_LOG_WARNING, "Bad %s options:%s\n", s, buf);
+}
+
 static int swarm_thread_init(struct swarm_thread *t, struct swarm *swarm,
 	AVDictionary *sws_opts_tmpl, AVCodec *encoder, AVDictionary *encoder_opts_tmpl) {
 	int rc = 0;
@@ -210,6 +225,8 @@ static int swarm_thread_init(struct swarm_thread *t, struct swarm *swarm,
 	av_opt_set_int(t->scaler.ctx, "dsth", t->scaler.height, 0);
 	av_opt_set_int(t->scaler.ctx, "dst_format", t->scaler.pix_fmt, 0);
 	av_opt_set_dict(t->scaler.ctx, &sws_opts);
+
+	swarm_log_bad_options(&t->scaler, sws_opts, "scaler");
 	av_dict_free(&sws_opts);
 
 	av_opt_set_int(t->scaler.ctx, "srcw", decoder->width, 0);
@@ -233,6 +250,7 @@ static int swarm_thread_init(struct swarm_thread *t, struct swarm *swarm,
 	if (rc != 0)
 		goto fail;
 
+	swarm_log_bad_options(t->swarm, encoder_opts, "encoder");
 	av_dict_free(&encoder_opts);
 	return 0;
 
@@ -321,6 +339,7 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 	}
 
 	rc = avformat_open_input(&swarm->demuxer, argv[optind], demuxer, &demuxer_opts);
+	swarm_log_bad_options(swarm, demuxer_opts, "demuxer");
 	av_dict_free(&demuxer_opts);
 	if (rc != 0)
 		goto fail;
@@ -388,6 +407,7 @@ static int swarm_init(struct swarm *swarm, int argc, char **argv) {
 		goto fail;
 
 	rc = avformat_write_header(swarm->muxer, &muxer_opts);
+	swarm_log_bad_options(swarm, muxer_opts, "muxer");
 	av_dict_free(&muxer_opts);
 	if (rc != 0)
 		goto fail;
