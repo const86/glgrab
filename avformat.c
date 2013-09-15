@@ -57,6 +57,8 @@ static int setup_stream(struct AVFormatContext *avctx) {
 	if (s == NULL)
 		return AVERROR(ENOMEM);
 
+	s->r_frame_rate = g->framerate;
+
 	AVCodecContext *codec = s->codec;
 	codec->time_base = s->time_base = av_inv_q(g->framerate);
 	codec->codec_type = AVMEDIA_TYPE_VIDEO;
@@ -80,6 +82,7 @@ static int read_header(struct AVFormatContext *avctx) {
 		avctx->ctx_flags = AVFMTCTX_NOHEADER;
 	}
 
+	avctx->duration = -1;
 	return rc ? rc : AVERROR(mrb_open(&g->rb, avctx->filename));
 }
 
