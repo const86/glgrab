@@ -25,6 +25,7 @@
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/timestamp.h>
 #include <libswscale/swscale.h>
 #include <pthread.h>
@@ -529,8 +530,11 @@ static int swarm_process_frame(struct swarm_thread *t, struct swarm_item *item, 
 		goto fail;
 	}
 
+	const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(t->encoder->pix_fmt);
+	int align = 16 << (pixdesc == NULL ? 0 : pixdesc->log2_chroma_w);
+
 	AVPicture *pic = (AVPicture *)frame2;
-	rc = avpicture_alloc(pic, t->encoder->pix_fmt, t->encoder->width, t->encoder->height);
+	rc = avpicture_alloc(pic, t->encoder->pix_fmt, FFALIGN(t->encoder->width, align), t->encoder->height);
 	if (rc != 0)
 		goto fail;
 
