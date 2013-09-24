@@ -28,6 +28,8 @@
 #include <libavutil/opt.h>
 #include <time.h>
 
+#pragma GCC visibility push(default)
+
 struct glgrab_priv {
 	AVClass *class;
 	struct mrb rb;

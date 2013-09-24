@@ -1,4 +1,4 @@
 #!/bin/sh
 GLGRAB_LIBDIR="@GLGRAB_LIBDIR@"
-LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}${GLGRAB_LIBDIR}/libglgrab-avformat.so" \
+LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}${GLGRAB_LIBDIR}/libglgrab-av-preload.so" \
 	exec "$@"

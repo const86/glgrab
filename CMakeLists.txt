@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 project(glgrab)
 include(GNUInstallDirs)
 
-set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/glgrab")
+set(GLGRAB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/glgrab")
+set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
 
 add_definitions(-std=c99 -pedantic -Wall -fvisibility=hidden)
 
@@ -21,17 +22,20 @@ add_executable(glgrab-monitor EXCLUDE_FROM_ALL
 
 add_library(glgrab-avformat SHARED
   avformat.c
-  avformat-preload.c
   mrb_read.c
 )
-target_link_libraries(glgrab-avformat avcodec avformat)
+target_link_libraries(glgrab-avformat avcodec avformat rt)
+set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0)
+
+add_library(glgrab-av-preload SHARED
+  avformat-preload.c
+)
+target_link_libraries(glgrab-av-preload glgrab-avformat)
 
 add_executable(glgrab-export
   export.c
-  avformat.c
-  mrb_read.c
 )
-target_link_libraries(glgrab-export avcodec avformat avutil avdevice swscale rt)
+target_link_libraries(glgrab-export glgrab-avformat avcodec avformat avutil avdevice swscale rt)
 set_target_properties(glgrab-export PROPERTIES
   COMPILE_FLAGS "-pthread"
   LINK_FLAGS "-pthread")
@@ -39,7 +43,11 @@ set_target_properties(glgrab-export PROPERTIES
 configure_file(glgrab.in glgrab ESCAPE_QUOTES @ONLY)
 configure_file(glgrab-av.in glgrab-av ESCAPE_QUOTES @ONLY)
 
-install(TARGETS glgrab-audit glgrab-preload glgrab-avformat glgrab-export
+install(TARGETS glgrab-avformat
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(TARGETS glgrab-audit glgrab-preload glgrab-av-preload glgrab-export
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${GLGRAB_LIBDIR}
 )
