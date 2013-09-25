@@ -26,6 +26,8 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
+#include <opencv/cv.h>
 #include <time.h>
 
 #pragma GCC visibility push(default)
@@ -34,15 +36,22 @@ struct glgrab_priv {
 	AVClass *class;
 	struct mrb rb;
 	struct AVStream *stream;
+
 	AVRational framerate;
 	int width, height;
-	int64_t last_pts;
-	AVPacket pkt0;
-	uint64_t ts0;
+
 	union {
 		float s;
 		struct timespec ts;
 	} poll;
+
+	int threads;
+	enum AVPixelFormat pix_fmt;
+	int (*convert_pix_fmt)(struct glgrab_priv *, AVPacket *);
+
+	int64_t last_pts;
+	AVPacket pkt0;
+	uint64_t ts0;
 };
 
 static const struct AVOption options[] = {
@@ -52,6 +61,10 @@ static const struct AVOption options[] = {
 	 {.str = NULL}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
 	{"poll", "poll interval, in seconds", offsetof(struct glgrab_priv, poll), AV_OPT_TYPE_FLOAT,
 	 {.dbl = 0}, 0, FLT_MAX, AV_OPT_FLAG_DECODING_PARAM},
+	{"threads", NULL, offsetof(struct glgrab_priv, threads), AV_OPT_TYPE_INT,
+	 {.i64 = -1}, -1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
+	{"pixel_format", NULL, offsetof(struct glgrab_priv, pix_fmt), AV_OPT_TYPE_PIXEL_FMT,
+	 {.i64 = AV_PIX_FMT_BGRA}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
 };
 
@@ -61,6 +74,34 @@ static const AVClass glgrab_class = {
 	.option = options,
 	.version = LIBAVUTIL_VERSION_INT
 };
+
+static int convert_bgra(struct glgrab_priv *g, AVPacket *pkt) {
+	return 0;
+}
+
+static int convert_yuv420p(struct glgrab_priv *g, AVPacket *pkt) {
+	AVCodecContext *codec = g->stream->codec;
+
+	AVPacket p = {0};
+	av_init_packet(&p);
+	int err = av_new_packet(&p, avpicture_get_size(AV_PIX_FMT_YUV420P, codec->width, codec->height));
+
+	if (err == 0) {
+		CvMat src, dst;
+		cvInitMatHeader(&src, codec->height, codec->width, CV_8UC4, pkt->data, CV_AUTOSTEP);
+		cvInitMatHeader(&dst, codec->height + codec->height / 2, codec->width, CV_8U, p.data, CV_AUTOSTEP);
+		cvCvtColor(&src, &dst, CV_BGRA2YUV_I420);
+
+		p.pts = pkt->pts;
+		p.dts = pkt->dts;
+		p.stream_index = pkt->stream_index;
+		p.flags = pkt->flags;
+		av_destruct_packet(pkt);
+		*pkt = p;
+	}
+
+	return err;
+}
 
 static int setup_stream(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
@@ -74,15 +115,35 @@ static int setup_stream(struct AVFormatContext *avctx) {
 	codec->time_base = s->time_base = av_inv_q(g->framerate);
 	codec->codec_type = AVMEDIA_TYPE_VIDEO;
 	codec->codec_id = AV_CODEC_ID_RAWVIDEO;
-	codec->width = g->width;
-	codec->height = g->height;
-	codec->pix_fmt = AV_PIX_FMT_BGRA;
+	codec->width = FFALIGN(g->width, 2);
+	codec->height = FFALIGN(g->height, 2);
+	codec->pix_fmt = g->pix_fmt;
 	return 0;
 }
 
 static int read_header(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
 	int rc = 0;
+
+	switch (g->pix_fmt) {
+
+	case AV_PIX_FMT_BGRA:
+		g->convert_pix_fmt = convert_bgra;
+		break;
+
+	case AV_PIX_FMT_YUV420P:
+		g->convert_pix_fmt = convert_yuv420p;
+
+		if (g->threads >= 0)
+			cvSetNumThreads(g->threads);
+
+		break;
+
+	default:
+		av_log(avctx, AV_LOG_ERROR, "Cannot output pixel format %s\n", av_get_pix_fmt_name(g->pix_fmt));
+		return AVERROR(EINVAL);
+
+	}
 
 	if (g->poll.s > 0) {
 		float poll = g->poll.s;
@@ -153,35 +214,25 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 		if (pts <= g->last_pts)
 			continue;
 
-		int size = avpicture_get_size(codec->pix_fmt, codec->width, codec->height);
+		int size = avpicture_get_size(AV_PIX_FMT_BGRA, codec->width, codec->height);
 
 		AVPacket pkt1 = {0};
 		av_init_packet(&pkt1);
 		err = av_new_packet(&pkt1, size);
 		if (!err) {
 			AVPicture src;
-			avpicture_fill(&src, frame->data, codec->pix_fmt, (copy.width + 1) & ~1, copy.height);
+			avpicture_fill(&src, frame->data, AV_PIX_FMT_BGRA, FFALIGN(copy.width, 2), copy.height);
 			src.data[0] += src.linesize[0] * (copy.height - 1);
 			src.linesize[0] = -src.linesize[0];
 
 			AVPicture pic;
-			avpicture_fill(&pic, pkt1.data, codec->pix_fmt, codec->width, codec->height);
+			avpicture_fill(&pic, pkt1.data, AV_PIX_FMT_BGRA, codec->width, codec->height);
 
-			int width = codec->width;
-			if (copy.width < width)
-				width = copy.width;
-
-			int height = codec->width;
-			if (copy.height < height)
-				height = copy.height;
-
-			if (copy.width < codec->width || copy.height < codec->height) {
+			if (copy.width < codec->width || copy.height < codec->height)
 				memset(pkt1.data, 0, pkt1.size);
-				av_picture_copy(&pic, &src, codec->pix_fmt,
-						FFMIN(codec->width, copy.width), FFMIN(codec->height, copy.height));
-			} else {
-				av_picture_copy(&pic, &src, codec->pix_fmt, codec->width, codec->height);
-			}
+
+			av_picture_copy(&pic, &src, AV_PIX_FMT_BGRA,
+				FFMIN(codec->width, copy.width), FFMIN(codec->height, copy.height));
 
 			if (!mrb_check(&g->rb)) {
 				av_free_packet(&pkt1);
@@ -232,6 +283,8 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 				g->ts0 = copy.ns;
 				continue;
 			}
+
+			err = g->convert_pix_fmt(g, pkt);
 		}
 
 		retry = false;
