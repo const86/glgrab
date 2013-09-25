@@ -18,12 +18,15 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _XOPEN_SOURCE 700
+
 #include "glgrab.h"
 #include "mrb.h"
 #include <float.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
+#include <time.h>
 
 struct glgrab_priv {
 	AVClass *class;
@@ -34,6 +37,10 @@ struct glgrab_priv {
 	int64_t last_pts;
 	AVPacket pkt0;
 	uint64_t ts0;
+	union {
+		float s;
+		struct timespec ts;
+	} poll;
 };
 
 static const struct AVOption options[] = {
@@ -41,6 +48,8 @@ static const struct AVOption options[] = {
 	 {.dbl = AV_TIME_BASE}, DBL_MIN, DBL_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{"video_size", NULL, offsetof(struct glgrab_priv, width), AV_OPT_TYPE_IMAGE_SIZE,
 	 {.str = NULL}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
+	{"poll", "poll interval, in seconds", offsetof(struct glgrab_priv, poll), AV_OPT_TYPE_FLOAT,
+	 {.dbl = 0}, 0, FLT_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
 };
 
@@ -73,6 +82,14 @@ static int read_header(struct AVFormatContext *avctx) {
 	struct glgrab_priv *const g = avctx->priv_data;
 	int rc = 0;
 
+	if (g->poll.s > 0) {
+		float poll = g->poll.s;
+		g->poll.ts.tv_sec = poll;
+		g->poll.ts.tv_nsec = FFMIN((poll - g->poll.ts.tv_sec) * 1e9, 999999999L);
+	} else {
+		g->poll.ts.tv_sec = g->poll.ts.tv_nsec = 0;
+	}
+
 	g->last_pts = -1;
 	av_init_packet(&g->pkt0);
 
@@ -92,8 +109,13 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 
 	for (bool retry = true; retry; mrb_release(&g->rb)) {
 		const void *p;
-		if (!mrb_reveal(&g->rb, &p))
-			return AVERROR(EAGAIN);
+		while (!mrb_reveal(&g->rb, &p)) {
+			const struct timespec *ts = &g->poll.ts;
+			if (ts->tv_sec || ts->tv_nsec)
+				clock_nanosleep(CLOCK_MONOTONIC, 0, ts, NULL);
+			else
+				return AVERROR(EAGAIN);
+		}
 
 		if (!p) {
 			if (g->pkt0.pts != AV_NOPTS_VALUE) {
