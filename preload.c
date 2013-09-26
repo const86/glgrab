@@ -89,6 +89,18 @@ static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
+static void get_window_size_x11(Display *dpy, XID win, unsigned *width, unsigned *height) {
+	Window w;
+	unsigned u;
+	int i;
+	XGetGeometry(dpy, win, &w, &i, &i, width, height, &u, &u);
+}
+
+static void get_window_size_glx(Display *dpy, XID drawable, unsigned *width, unsigned *height) {
+	glXQueryDrawable(dpy, drawable, GLX_WIDTH, width);
+	glXQueryDrawable(dpy, drawable, GLX_HEIGHT, height);
+}
+
 static volatile GLXContext mainctx;
 
 void glgrab_glXDestroyContext(void (*real)(Display *, GLXContext), Display *dpy, GLXContext ctx) {
@@ -111,6 +123,7 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 
 	static struct glgrab_frame *frame;
 	static GLuint pbo;
+	static void (*get_window_size)(Display *, XID, unsigned *, unsigned *);
 
 	unsigned width = 0, height = 0;
 	GLXContext ctx = NULL, current = glXGetCurrentContext();
@@ -119,23 +132,23 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 		ctx = current;
 		glGenBuffers(1, &pbo);
 		frame = NULL;
+
+		XErrorHandler error_handler = XSetErrorHandler(x11_error_handler);
+		x11_error_found = false;
+		get_window_size_glx(dpy, drawable, &width, &height);
+		XSync(dpy, false);
+		XSetErrorHandler(error_handler);
+
+		if (x11_error_found) {
+			get_window_size = get_window_size_x11;
+			get_window_size(dpy, drawable, &width, &height);
+		} else
+			get_window_size = get_window_size_glx;
 	} else if (ctx != current) {
 		real(dpy, drawable);
 		return;
-	}
-
-	x11_error_found = false;
-	XErrorHandler error_handler = XSetErrorHandler(x11_error_handler);
-	glXQueryDrawable(dpy, drawable, GLX_WIDTH, &width);
-	glXQueryDrawable(dpy, drawable, GLX_HEIGHT, &height);
-	XSync(dpy, false);
-	XSetErrorHandler(error_handler);
-
-	if (x11_error_found) {
-		Window w;
-		unsigned u;
-		int i;
-		XGetGeometry(dpy, drawable, &w, &i, &i, &width, &height, &u, &u);
+	} else {
+		get_window_size(dpy, drawable, &width, &height);
 	}
 
 	GLint pixel_pack_buffer;
