@@ -19,6 +19,7 @@
  */
 
 #define _XOPEN_SOURCE 700
+#define GL_GLEXT_PROTOTYPES
 
 #include "mrb.h"
 #include "glgrab.h"
@@ -88,6 +89,10 @@ static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
+static unsigned linewidth(unsigned w) {
+	return (w * 4 + 7) & ~7U;
+}
+
 void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
 	static volatile bool running = false;
 
@@ -95,6 +100,9 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 		real(dpy, drawable);
 		return;
 	}
+
+	static struct glgrab_frame *frame;
+	static GLuint pbo;
 
 	unsigned width = 0, height = 0;
 
@@ -112,26 +120,46 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 		XGetGeometry(dpy, drawable, &w, &i, &i, &width, &height, &u, &u);
 	}
 
-	unsigned stride = (width * 4 + 7U) & ~7U;
-	struct glgrab_frame *frame = mrb_reserve(&rb, sizeof(struct glgrab_frame) + stride * height);
-	if (frame) {
-		frame->width = width;
-		frame->height = height;
+	if (!glIsBuffer(pbo))
+		glGenBuffers(1, &pbo);
 
-		glPushAttrib(GL_PIXEL_MODE_BIT);
-		glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
+	GLint pixel_pack_buffer;
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo);
+
+	if (frame != NULL) {
+		glGetBufferSubData(GL_PIXEL_PACK_BUFFER, 0, linewidth(frame->width) * frame->height, frame->data);
+
+		frame = NULL;
+		mrb_commit(&rb);
+	}
+
+	frame = mrb_reserve(&rb, sizeof(struct glgrab_frame) + linewidth(width) * height);
+	if (frame != NULL) {
+		GLint read_buffer, pack_alignment;
+		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
+		glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
+
 		glReadBuffer(GL_BACK);
 		glPixelStorei(GL_PACK_ALIGNMENT, 8);
-		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, frame->data);
-		glPopClientAttrib();
-		glPopAttrib();
 
-		real(dpy, drawable);
-		frame->ns = now() - start_time;
-		mrb_commit(&rb);
+		glBufferData(GL_PIXEL_PACK_BUFFER, linewidth(width) * height, NULL, GL_STREAM_READ);
+		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+
+		glReadBuffer(read_buffer);
+		glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
 	} else {
 		fprintf(stderr, "glgrab: failed to allocate frame %ux%u\n", width, height);
-		real(dpy, drawable);
+	}
+
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
+
+	real(dpy, drawable);
+
+	if (frame != NULL) {
+		frame->width = width;
+		frame->height = height;
+		frame->ns = now() - start_time;
 	}
 
 	__atomic_store_n(&running, false, __ATOMIC_RELEASE);
