@@ -89,6 +89,14 @@ static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
+static volatile GLXContext mainctx;
+
+void glgrab_glXDestroyContext(void (*real)(Display *, GLXContext), Display *dpy, GLXContext ctx) {
+	GLXContext current = ctx;
+	__atomic_compare_exchange_n(&mainctx, &current, NULL, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+	real(dpy, ctx);
+}
+
 static unsigned linewidth(unsigned w) {
 	return (w * 4 + 7) & ~7U;
 }
@@ -105,6 +113,16 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 	static GLuint pbo;
 
 	unsigned width = 0, height = 0;
+	GLXContext ctx = NULL, current = glXGetCurrentContext();
+
+	if (__atomic_compare_exchange_n(&mainctx, &ctx, current, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+		ctx = current;
+		glGenBuffers(1, &pbo);
+		frame = NULL;
+	} else if (ctx != current) {
+		real(dpy, drawable);
+		return;
+	}
 
 	x11_error_found = false;
 	XErrorHandler error_handler = XSetErrorHandler(x11_error_handler);
@@ -119,9 +137,6 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 		int i;
 		XGetGeometry(dpy, drawable, &w, &i, &i, &width, &height, &u, &u);
 	}
-
-	if (!glIsBuffer(pbo))
-		glGenBuffers(1, &pbo);
 
 	GLint pixel_pack_buffer;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
@@ -171,7 +186,10 @@ static void __attribute__((constructor)) init(void) {
 
 		if (h) {
 			if (!dlsym(h, "glgrab_glXSwapBuffers"))
-				fprintf(stderr, "glgrab: failed to bind hook: %s\n", dlerror());
+				fprintf(stderr, "glgrab: failed to bind glXSwapBuffers hook: %s\n", dlerror());
+
+			if (!dlsym(h, "glgrab_glXDestroyContext"))
+				fprintf(stderr, "glgrab: failed to bind glXDestroyContext hook: %s\n", dlerror());
 
 			dlclose(h);
 		} else {

@@ -40,6 +40,20 @@ static void fake_glXSwapBuffers(Display *dpy, GLXDrawable drawable) {
 	}
 }
 
+typedef void (*glXDestroyContext_t)(Display *, GLXContext);
+static glXDestroyContext_t real_glXDestroyContext;
+
+typedef void (*glXDestroyContext_hook_t)(glXDestroyContext_t, Display *, GLXContext);
+static glXDestroyContext_hook_t glgrab_glXDestroyContext;
+
+static void fake_glXDestroyContext(Display *dpy, GLXContext ctx) {
+	if (glgrab_glXDestroyContext) {
+		glgrab_glXDestroyContext(real_glXDestroyContext, dpy, ctx);
+	} else {
+		real_glXDestroyContext(dpy, ctx);
+	}
+}
+
 static PFNGLXGETPROCADDRESSPROC real_glXGetProcAddressARB;
 
 static __GLXextFuncPtr fake_glXGetProcAddressARB(const GLubyte *procname) {
@@ -48,6 +62,9 @@ static __GLXextFuncPtr fake_glXGetProcAddressARB(const GLubyte *procname) {
 	if (strcmp((const char *)procname, "glXSwapBuffers") == 0) {
 		real_glXSwapBuffers = (glXSwapBuffers_t)addr;
 		addr = (__GLXextFuncPtr)&fake_glXSwapBuffers;
+	} else if (strcmp((const char *)procname, "glXDestroyContext") == 0) {
+		real_glXDestroyContext = (glXDestroyContext_t)addr;
+		addr = (__GLXextFuncPtr)&fake_glXDestroyContext;
 	}
 
 	return addr;
@@ -93,11 +110,16 @@ uintptr_t la_symbind(ElfW(Sym) *sym, unsigned int ndx, uintptr_t *refcook,
 	if (strcmp(symname, "glXSwapBuffers") == 0) {
 		real_glXSwapBuffers = (glXSwapBuffers_t)addr;
 		addr = (uintptr_t)&fake_glXSwapBuffers;
+	} else if (strcmp(symname, "glXDestroyContext") == 0) {
+		real_glXDestroyContext = (glXDestroyContext_t)addr;
+		addr = (uintptr_t)&fake_glXDestroyContext;
 	} else if (strcmp(symname, "glXGetProcAddressARB") == 0) {
 		real_glXGetProcAddressARB = (PFNGLXGETPROCADDRESSPROC)addr;
 		addr = (uintptr_t)&fake_glXGetProcAddressARB;
 	} else if (strcmp(symname, "glgrab_glXSwapBuffers") == 0) {
 		glgrab_glXSwapBuffers = (glXSwapBuffers_hook_t)addr;
+	} else if (strcmp(symname, "glgrab_glXDestroyContext") == 0) {
+		glgrab_glXDestroyContext = (glXDestroyContext_hook_t)addr;
 	}
 
 	return addr;
