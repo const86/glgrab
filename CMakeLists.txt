@@ -24,7 +24,7 @@ add_library(glgrab-avformat SHARED
   avformat.c
   mrb_read.c
 )
-target_link_libraries(glgrab-avformat avcodec avformat opencv_core opencv_imgproc rt)
+target_link_libraries(glgrab-avformat avcodec avformat rt)
 set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0)
 
 add_library(glgrab-av-preload SHARED

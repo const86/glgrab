@@ -72,15 +72,11 @@ Configuration passed via -I, -E, and -O options is the same as in ffmpeg.
 Refer to `ffmpeg -help full' for the list of those options.
 
 Another way to boost concurrency and overall speed is using built-in colorspace
-conversion function. Its quality is notable lower then that of ffmpeg. Again,
-the same example:
+conversion function. It's fast but single-threaded, so it still scales worse
+than glgrab-export. Again, the same example:
 
-  glgrab-av ffmpeg -vsync vfr -f glgrab -r 30 -s 1024x768 \
-      -threads 4 -pix_fmt yuv420p -i <glgrab buffer> \
-      -c:v libx264 -qp 0 -threads 4 video.mov
+  glgrab-av ffmpeg -vsync vfr -f glgrab -r 30 -s 1024x768 -pix_fmt yuv420p \
+      -i <glgrab buffer> -c:v libx264 -qp 0 -threads 4 video.mov
 
-Note the -pix_fmt and two -threads options. The former enables faster
-conversion, so that slower ffmpeg's function won't be needed. Only yuv420p
-output format is supported. First -threads options set number of threads
-used for conversion, second one sets number of threads for x264 encoder.
-Since they are called sequentially, only 4 threads will run at each moment.
+The -pix_fmt option enables faster conversion, so that slower ffmpeg's function
+won't be needed. Only yuv420p output format is supported.

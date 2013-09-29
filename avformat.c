@@ -27,7 +27,6 @@
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
-#include <opencv/cv.h>
 #include <time.h>
 
 #pragma GCC visibility push(default)
@@ -45,9 +44,8 @@ struct glgrab_priv {
 		struct timespec ts;
 	} poll;
 
-	int threads;
 	enum AVPixelFormat pix_fmt;
-	int (*convert_pix_fmt)(struct glgrab_priv *, AVPacket *);
+	void (*convert_pix_fmt)(AVPicture *, const AVPicture *, int, int);
 
 	int64_t last_pts;
 	AVPacket pkt0;
@@ -61,8 +59,6 @@ static const struct AVOption options[] = {
 	 {.str = NULL}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
 	{"poll", "poll interval, in seconds", offsetof(struct glgrab_priv, poll), AV_OPT_TYPE_FLOAT,
 	 {.dbl = 0}, 0, FLT_MAX, AV_OPT_FLAG_DECODING_PARAM},
-	{"threads", NULL, offsetof(struct glgrab_priv, threads), AV_OPT_TYPE_INT,
-	 {.i64 = -1}, -1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{"pixel_format", NULL, offsetof(struct glgrab_priv, pix_fmt), AV_OPT_TYPE_PIXEL_FMT,
 	 {.i64 = AV_PIX_FMT_BGRA}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
@@ -75,32 +71,61 @@ static const AVClass glgrab_class = {
 	.version = LIBAVUTIL_VERSION_INT
 };
 
-static int convert_bgra(struct glgrab_priv *g, AVPacket *pkt) {
-	return 0;
+static void convert_bgra(AVPicture *dst, const AVPicture *src, int width, int height) {
+	av_picture_copy(dst, src, AV_PIX_FMT_BGRA, width, height);
 }
 
-static int convert_yuv420p(struct glgrab_priv *g, AVPacket *pkt) {
-	AVCodecContext *codec = g->stream->codec;
+static const uint8_t ITUR_BT_601_SHIFT = 20;
+static const uint32_t ITUR_BT_601_CRY = 269484;
+static const uint32_t ITUR_BT_601_CGY = 528482;
+static const uint32_t ITUR_BT_601_CBY = 102760;
+static const int32_t ITUR_BT_601_CRU = -155188;
+static const int32_t ITUR_BT_601_CGU = -305135;
+static const int32_t ITUR_BT_601_CBU = 460324;
+static const int32_t ITUR_BT_601_CGV = -385875;
+static const int32_t ITUR_BT_601_CBV = -74448;
 
-	AVPacket p = {0};
-	av_init_packet(&p);
-	int err = av_new_packet(&p, avpicture_get_size(AV_PIX_FMT_YUV420P, codec->width, codec->height));
+static uint8_t rgb2y(uint32_t r, uint32_t g, uint32_t b) {
+	const uint32_t bias = (16 << ITUR_BT_601_SHIFT) + (1 << (ITUR_BT_601_SHIFT - 1));
+	return (r * ITUR_BT_601_CRY + g * ITUR_BT_601_CGY + b * ITUR_BT_601_CBY + bias) >> ITUR_BT_601_SHIFT;
+}
 
-	if (err == 0) {
-		CvMat src, dst;
-		cvInitMatHeader(&src, codec->height, codec->width, CV_8UC4, pkt->data, CV_AUTOSTEP);
-		cvInitMatHeader(&dst, codec->height + codec->height / 2, codec->width, CV_8U, p.data, CV_AUTOSTEP);
-		cvCvtColor(&src, &dst, CV_BGRA2YUV_I420);
+static void __attribute__((noinline)) convert_yuv420p_impl(const uint8_t *restrict BGRA, int BGRAS,
+	uint8_t *restrict Y, int YS, uint8_t *restrict U, int US, uint8_t *restrict V, int VS,
+	size_t width, size_t height) {
+	for (size_t i2 = 0; i2 < height / 2; i2++) {
+		const uint8_t *row0 = BGRA + BGRAS * (i2 * 2);
 
-		p.pts = pkt->pts;
-		p.dts = pkt->dts;
-		p.stream_index = pkt->stream_index;
-		p.flags = pkt->flags;
-		av_destruct_packet(pkt);
-		*pkt = p;
+		uint8_t *yrow0 = Y + YS * (i2 * 2);
+		uint8_t *u = U + US * i2;
+		uint8_t *v = V + VS * i2;
+
+		for (size_t j2 = 0; j2 < width / 2; j2++) {
+			const uint8_t *p0 = row0 + j2 * 2 * 4, *p1 = p0 + BGRAS;
+			uint8_t *y0 = yrow0 + j2 * 2, *y1 = y0 + YS;
+
+			const uint8_t b00 = p0[0], g00 = p0[1], r00 = p0[2], b01 = p0[4], g01 = p0[5], r01 = p0[6];
+			const uint8_t b10 = p1[0], g10 = p1[1], r10 = p1[2], b11 = p1[4], g11 = p1[5], r11 = p1[6];
+
+			y0[0] = rgb2y(r00, g00, b00);
+			y0[1] = rgb2y(r01, g01, b01);
+			y1[0] = rgb2y(r10, g10, b10);
+			y1[1] = rgb2y(r11, g11, b11);
+
+			int32_t r = r00 + r01 + r10 + r11;
+			int32_t g = g00 + g01 + g10 + g11;
+			int32_t b = b00 + b01 + b10 + b11;
+
+			const int32_t bias = (128 << (ITUR_BT_601_SHIFT + 2)) + (1 << (ITUR_BT_601_SHIFT + 1));
+			u[j2] = (ITUR_BT_601_CRU * r + ITUR_BT_601_CGU * g + ITUR_BT_601_CBU * b + bias) >> (ITUR_BT_601_SHIFT + 2);
+			v[j2] = (ITUR_BT_601_CBU * r + ITUR_BT_601_CGV * g + ITUR_BT_601_CBV * b + bias) >> (ITUR_BT_601_SHIFT + 2);
+		}
 	}
+}
 
-	return err;
+static void convert_yuv420p(AVPicture *restrict dst, const AVPicture *restrict src, int width, int height) {
+	convert_yuv420p_impl(src->data[0], src->linesize[0], dst->data[0], dst->linesize[0],
+		dst->data[1], dst->linesize[1], dst->data[2], dst->linesize[2], width, height);
 }
 
 static int setup_stream(struct AVFormatContext *avctx) {
@@ -133,10 +158,6 @@ static int read_header(struct AVFormatContext *avctx) {
 
 	case AV_PIX_FMT_YUV420P:
 		g->convert_pix_fmt = convert_yuv420p;
-
-		if (g->threads >= 0)
-			cvSetNumThreads(g->threads);
-
 		break;
 
 	default:
@@ -214,7 +235,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 		if (pts <= g->last_pts)
 			continue;
 
-		int size = avpicture_get_size(AV_PIX_FMT_BGRA, codec->width, codec->height);
+		int size = avpicture_get_size(codec->pix_fmt, codec->width, codec->height);
 
 		AVPacket pkt1 = {0};
 		av_init_packet(&pkt1);
@@ -226,13 +247,13 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			src.linesize[0] = -src.linesize[0];
 
 			AVPicture pic;
-			avpicture_fill(&pic, pkt1.data, AV_PIX_FMT_BGRA, codec->width, codec->height);
+			avpicture_fill(&pic, pkt1.data, codec->pix_fmt, codec->width, codec->height);
 
 			if (copy.width < codec->width || copy.height < codec->height)
 				memset(pkt1.data, 0, pkt1.size);
 
-			av_picture_copy(&pic, &src, AV_PIX_FMT_BGRA,
-				FFMIN(codec->width, copy.width), FFMIN(codec->height, copy.height));
+			g->convert_pix_fmt(&pic, &src, FFMIN(codec->width, copy.width),
+				FFMIN(codec->height, copy.height));
 
 			if (!mrb_check(&g->rb)) {
 				av_free_packet(&pkt1);
@@ -283,8 +304,6 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 				g->ts0 = copy.ns;
 				continue;
 			}
-
-			err = g->convert_pix_fmt(g, pkt);
 		}
 
 		retry = false;
