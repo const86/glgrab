@@ -75,24 +75,50 @@ static void convert_bgra(AVPicture *dst, const AVPicture *src, int width, int he
 	av_picture_copy(dst, src, AV_PIX_FMT_BGRA, width, height);
 }
 
-static const uint8_t ITUR_BT_601_SHIFT = 20;
-static const uint32_t ITUR_BT_601_CRY = 269484;
-static const uint32_t ITUR_BT_601_CGY = 528482;
-static const uint32_t ITUR_BT_601_CBY = 102760;
-static const int32_t ITUR_BT_601_CRU = -155188;
-static const int32_t ITUR_BT_601_CGU = -305135;
-static const int32_t ITUR_BT_601_CBU = 460324;
-static const int32_t ITUR_BT_601_CGV = -385875;
-static const int32_t ITUR_BT_601_CBV = -74448;
+#define BT_709_KB 0.0722f
+#define BT_709_KR 0.2126f
 
-static uint8_t rgb2y(uint32_t r, uint32_t g, uint32_t b) {
-	const uint32_t bias = (16 << ITUR_BT_601_SHIFT) + (1 << (ITUR_BT_601_SHIFT - 1));
-	return (r * ITUR_BT_601_CRY + g * ITUR_BT_601_CGY + b * ITUR_BT_601_CBY + bias) >> ITUR_BT_601_SHIFT;
-}
+#define BT_601_KB 0.114f
+#define BT_601_KR 0.299f
 
 static void __attribute__((noinline)) convert_yuv420p_impl(const uint8_t *restrict BGRA, int BGRAS,
 	uint8_t *restrict Y, int YS, uint8_t *restrict U, int US, uint8_t *restrict V, int VS,
 	size_t width, size_t height) {
+	const float KB = BT_709_KB;
+	const float KR = BT_709_KR;
+
+	typedef uint16_t word;
+
+	const int SY = 8;
+	const int SC = 8;
+
+	const float KG = 1.f - KB - KR;
+	const float KY = 220.f / 256.f;
+	const float KC = 112.f / 256.f;
+
+	const float KRY = KY * KR;
+	const float KGY = KY * KG;
+	const float KBY = KY * KB;
+	const float KRUz = KC * KR / (1.f - KB);
+	const float KGUz = KC * KG / (1.f - KB);
+	const float KBU = KC;
+	const float KRV = KC;
+	const float KGVz = KC * KG / (1.f - KR);
+	const float KBVz = KC * KB / (1.f - KR);
+
+	const word Ybias = (16u << SY) + (1u << (SY - 1));
+	const word KRYi = KRY * (1 << SY) + 0.5f;
+	const word KGYi = KGY * (1 << SY) + 0.5f;
+	const word KBYi = KBY * (1 << SY) + 0.5f;
+
+	const word Cbias = (128u << SC) + (1u << (SC - 1));
+	const word KRUzi = KRUz * (1 << SC) + 0.5f;
+	const word KGUzi = KGUz * (1 << SC) + 0.5f;
+	const word KBUi = KBU * (1 << SC) + 0.5f;
+	const word KRVi = KRV * (1 << SC) + 0.5f;
+	const word KGVzi = KGVz * (1 << SC) + 0.5f;
+	const word KBVzi = KBVz * (1 << SC) + 0.5f;
+
 	for (size_t i2 = 0; i2 < height / 2; i2++) {
 		const uint8_t *row0 = BGRA + BGRAS * (i2 * 2);
 
@@ -107,18 +133,17 @@ static void __attribute__((noinline)) convert_yuv420p_impl(const uint8_t *restri
 			const uint8_t b00 = p0[0], g00 = p0[1], r00 = p0[2], b01 = p0[4], g01 = p0[5], r01 = p0[6];
 			const uint8_t b10 = p1[0], g10 = p1[1], r10 = p1[2], b11 = p1[4], g11 = p1[5], r11 = p1[6];
 
-			y0[0] = rgb2y(r00, g00, b00);
-			y0[1] = rgb2y(r01, g01, b01);
-			y1[0] = rgb2y(r10, g10, b10);
-			y1[1] = rgb2y(r11, g11, b11);
+			y0[0] = (word)((word)(KRYi * r00 + KGYi * g00) + (word)(KBYi * b00 + Ybias)) >> SY;
+			y0[1] = (word)((word)(KRYi * r01 + KGYi * g01) + (word)(KBYi * b01 + Ybias)) >> SY;
+			y1[0] = (word)((word)(KRYi * r10 + KGYi * g10) + (word)(KBYi * b10 + Ybias)) >> SY;
+			y1[1] = (word)((word)(KRYi * r11 + KGYi * g11) + (word)(KBYi * b11 + Ybias)) >> SY;
 
-			int32_t r = r00 + r01 + r10 + r11;
-			int32_t g = g00 + g01 + g10 + g11;
-			int32_t b = b00 + b01 + b10 + b11;
+			const uint8_t r = (word)((word)(r00 + r01) + (word)(r10 + r11)) >> 2;
+			const uint8_t g = (word)((word)(g00 + g01) + (word)(g10 + g11)) >> 2;
+			const uint8_t b = (word)((word)(b00 + b01) + (word)(b10 + b11)) >> 2;
 
-			const int32_t bias = (128 << (ITUR_BT_601_SHIFT + 2)) + (1 << (ITUR_BT_601_SHIFT + 1));
-			u[j2] = (ITUR_BT_601_CRU * r + ITUR_BT_601_CGU * g + ITUR_BT_601_CBU * b + bias) >> (ITUR_BT_601_SHIFT + 2);
-			v[j2] = (ITUR_BT_601_CBU * r + ITUR_BT_601_CGV * g + ITUR_BT_601_CBV * b + bias) >> (ITUR_BT_601_SHIFT + 2);
+			u[j2] = (word)((word)(KBUi * b + Cbias) - (word)(KRUzi * r + KGUzi * g)) >> SC;
+			v[j2] = (word)((word)(KRVi * r + Cbias) - (word)(KBVzi * b + KGVzi * g)) >> SC;
 		}
 	}
 }
