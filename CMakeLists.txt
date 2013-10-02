@@ -22,6 +22,7 @@ add_executable(glgrab-monitor EXCLUDE_FROM_ALL
 
 add_library(glgrab-avformat SHARED
   avformat.c
+  bgra2yuv420p.c
   mrb_read.c
 )
 target_link_libraries(glgrab-avformat avcodec avformat rt)

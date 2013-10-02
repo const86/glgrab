@@ -22,6 +22,7 @@
 
 #include "glgrab.h"
 #include "mrb.h"
+#include "bgra2yuv420p.h"
 #include <float.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -75,81 +76,8 @@ static void convert_bgra(AVPicture *dst, const AVPicture *src, int width, int he
 	av_picture_copy(dst, src, AV_PIX_FMT_BGRA, width, height);
 }
 
-#define BT_709_KB 0.0722f
-#define BT_709_KR 0.2126f
-
-#define BT_601_KB 0.114f
-#define BT_601_KR 0.299f
-
-static void __attribute__((noinline)) convert_yuv420p_impl(const uint8_t *restrict BGRA, int BGRAS,
-	uint8_t *restrict Y, int YS, uint8_t *restrict U, int US, uint8_t *restrict V, int VS,
-	size_t width, size_t height) {
-	const float KB = BT_709_KB;
-	const float KR = BT_709_KR;
-
-	typedef uint16_t word;
-
-	const int SY = 8;
-	const int SC = 8;
-
-	const float KG = 1.f - KB - KR;
-	const float KY = 220.f / 256.f;
-	const float KC = 112.f / 256.f;
-
-	const float KRY = KY * KR;
-	const float KGY = KY * KG;
-	const float KBY = KY * KB;
-	const float KRUz = KC * KR / (1.f - KB);
-	const float KGUz = KC * KG / (1.f - KB);
-	const float KBU = KC;
-	const float KRV = KC;
-	const float KGVz = KC * KG / (1.f - KR);
-	const float KBVz = KC * KB / (1.f - KR);
-
-	const word Ybias = (16u << SY) + (1u << (SY - 1));
-	const word KRYi = KRY * (1 << SY) + 0.5f;
-	const word KGYi = KGY * (1 << SY) + 0.5f;
-	const word KBYi = KBY * (1 << SY) + 0.5f;
-
-	const word Cbias = (128u << SC) + (1u << (SC - 1));
-	const word KRUzi = KRUz * (1 << SC) + 0.5f;
-	const word KGUzi = KGUz * (1 << SC) + 0.5f;
-	const word KBUi = KBU * (1 << SC) + 0.5f;
-	const word KRVi = KRV * (1 << SC) + 0.5f;
-	const word KGVzi = KGVz * (1 << SC) + 0.5f;
-	const word KBVzi = KBVz * (1 << SC) + 0.5f;
-
-	for (size_t i2 = 0; i2 < height / 2; i2++) {
-		const uint8_t *row0 = BGRA + BGRAS * (i2 * 2);
-
-		uint8_t *yrow0 = Y + YS * (i2 * 2);
-		uint8_t *u = U + US * i2;
-		uint8_t *v = V + VS * i2;
-
-		for (size_t j2 = 0; j2 < width / 2; j2++) {
-			const uint8_t *p0 = row0 + j2 * 2 * 4, *p1 = p0 + BGRAS;
-			uint8_t *y0 = yrow0 + j2 * 2, *y1 = y0 + YS;
-
-			const uint8_t b00 = p0[0], g00 = p0[1], r00 = p0[2], b01 = p0[4], g01 = p0[5], r01 = p0[6];
-			const uint8_t b10 = p1[0], g10 = p1[1], r10 = p1[2], b11 = p1[4], g11 = p1[5], r11 = p1[6];
-
-			y0[0] = (word)((word)(KRYi * r00 + KGYi * g00) + (word)(KBYi * b00 + Ybias)) >> SY;
-			y0[1] = (word)((word)(KRYi * r01 + KGYi * g01) + (word)(KBYi * b01 + Ybias)) >> SY;
-			y1[0] = (word)((word)(KRYi * r10 + KGYi * g10) + (word)(KBYi * b10 + Ybias)) >> SY;
-			y1[1] = (word)((word)(KRYi * r11 + KGYi * g11) + (word)(KBYi * b11 + Ybias)) >> SY;
-
-			const uint8_t r = (word)((word)(r00 + r01) + (word)(r10 + r11)) >> 2;
-			const uint8_t g = (word)((word)(g00 + g01) + (word)(g10 + g11)) >> 2;
-			const uint8_t b = (word)((word)(b00 + b01) + (word)(b10 + b11)) >> 2;
-
-			u[j2] = (word)((word)(KBUi * b + Cbias) - (word)(KRUzi * r + KGUzi * g)) >> SC;
-			v[j2] = (word)((word)(KRVi * r + Cbias) - (word)(KBVzi * b + KGVzi * g)) >> SC;
-		}
-	}
-}
-
 static void convert_yuv420p(AVPicture *restrict dst, const AVPicture *restrict src, int width, int height) {
-	convert_yuv420p_impl(src->data[0], src->linesize[0], dst->data[0], dst->linesize[0],
+	bgra2yuv420p(src->data[0], src->linesize[0], dst->data[0], dst->linesize[0],
 		dst->data[1], dst->linesize[1], dst->data[2], dst->linesize[2], width, height);
 }
 
