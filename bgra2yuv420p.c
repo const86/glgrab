@@ -46,18 +46,18 @@
 #define SY 7
 #define SC 7
 
-#define Ybias (int16_t)((16 << SY) + (1 << (SY - 1)))
-#define KRYi (int8_t)(KRY * (1 << SY) + 0.5)
-#define KGYi (int8_t)(KGY * (1 << SY) + 0.5)
-#define KBYi (int8_t)(KBY * (1 << SY) + 0.5)
+static const int16_t Ybias = (16 << SY) + (1 << (SY - 1));
+static const int8_t KRYi = KRY * (1 << SY) + 0.5;
+static const int8_t KGYi = KGY * (1 << SY) + 0.5;
+static const int8_t KBYi = KBY * (1 << SY) + 0.5;
 
-#define Cbias (int16_t)((128 << SC) + (1 << (SC - 1)))
-#define KRUi (int8_t)(KRU * (1 << SC) - 0.5)
-#define KGUi (int8_t)(KGU * (1 << SC) - 0.5)
-#define KBUi (int8_t)(KBU * (1 << SC) + 0.5)
-#define KRVi (int8_t)(KRV * (1 << SC) + 0.5)
-#define KGVi (int8_t)(KGV * (1 << SC) - 0.5)
-#define KBVi (int8_t)(KBV * (1 << SC) - 0.5)
+static const int16_t Cbias = (128 << SC) + (1 << (SC - 1));
+static const int8_t KRUi = KRU * (1 << SC) - 0.5;
+static const int8_t KGUi = KGU * (1 << SC) - 0.5;
+static const int8_t KBUi = KBU * (1 << SC) + 0.5;
+static const int8_t KRVi = KRV * (1 << SC) + 0.5;
+static const int8_t KGVi = KGV * (1 << SC) - 0.5;
+static const int8_t KBVi = KBV * (1 << SC) - 0.5;
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)) && defined(__SSSE3__)
 
@@ -138,9 +138,9 @@ static void bgra2yuv420p_16x2(const void *restrict bgra0, const void *restrict b
 	_mm_storeh_pi(v, uv);
 }
 
-void bgra2yuv420p(const uint8_t *restrict bgra, int bgra_stride,
-	uint8_t *restrict y, int y_stride, uint8_t *restrict u, int u_stride,
-	uint8_t *restrict v, int v_stride, size_t width, size_t height) {
+void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
+	uint8_t *restrict y, ptrdiff_t y_stride, uint8_t *restrict u, ptrdiff_t u_stride,
+	uint8_t *restrict v, ptrdiff_t v_stride, size_t width, size_t height) {
 	const size_t step16 = width / 16;
 	const size_t step2 = width % 16 / 2;
 
@@ -169,35 +169,37 @@ void bgra2yuv420p(const uint8_t *restrict bgra, int bgra_stride,
 		u += u_stride;
 		v += v_stride;
 	}
+
+	_mm_empty();
 }
 
 #else
 
-void bgra2yuv420p(const uint8_t *restrict bgra, int bgra_stride,
-	uint8_t *restrict y, int y_stride, uint8_t *restrict u, int u_stride,
-	uint8_t *restrict v, int v_stride, size_t width, size_t height) {
+void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
+	uint8_t *restrict y, ptrdiff_t y_stride, uint8_t *restrict u, ptrdiff_t u_stride,
+	uint8_t *restrict v, ptrdiff_t v_stride, size_t width, size_t height) {
 	for (size_t row2 = 0; row2 < height / 2; row2++) {
-		const uint8_t *p0 = bgra;
-		uint8_t *y0 = y, *u0 = u, *v0 = v;
+		const uint8_t *restrict p0 = bgra;
+		uint8_t *restrict y0 = y, *restrict u0 = u, *restrict v0 = v;
 
 		for (size_t col2 = 0; col2 < width / 2; col2++) {
-			const uint8_t *p1 = p0 + bgra_stride;
-			uint8_t *y1 = y0 + y_stride;
+			const uint8_t *restrict p1 = p0 + bgra_stride;
+			uint8_t *restrict y1 = y0 + y_stride;
 
 			const uint8_t b00 = p0[0], g00 = p0[1], r00 = p0[2], b01 = p0[4], g01 = p0[5], r01 = p0[6];
 			const uint8_t b10 = p1[0], g10 = p1[1], r10 = p1[2], b11 = p1[4], g11 = p1[5], r11 = p1[6];
 
-			y0[0] = (uint16_t)((int16_t)(KRYi * r00 + KGYi * g00) + (int16_t)(KBYi * b00 + Ybias)) >> SY;
-			y0[1] = (uint16_t)((int16_t)(KRYi * r01 + KGYi * g01) + (int16_t)(KBYi * b01 + Ybias)) >> SY;
-			y1[0] = (uint16_t)((int16_t)(KRYi * r10 + KGYi * g10) + (int16_t)(KBYi * b10 + Ybias)) >> SY;
-			y1[1] = (uint16_t)((int16_t)(KRYi * r11 + KGYi * g11) + (int16_t)(KBYi * b11 + Ybias)) >> SY;
+			y0[0] = (uint16_t)(Ybias + KRYi * r00 + KGYi * g00 + KBYi * b00) >> SY;
+			y0[1] = (uint16_t)(Ybias + KRYi * r01 + KGYi * g01 + KBYi * b01) >> SY;
+			y1[0] = (uint16_t)(Ybias + KRYi * r10 + KGYi * g10 + KBYi * b10) >> SY;
+			y1[1] = (uint16_t)(Ybias + KRYi * r11 + KGYi * g11 + KBYi * b11) >> SY;
 
-			const uint8_t r = (uint16_t)((uint16_t)(r00 + r01) + (uint16_t)(r10 + r11)) >> 2;
-			const uint8_t g = (uint16_t)((uint16_t)(g00 + g01) + (uint16_t)(g10 + g11)) >> 2;
-			const uint8_t b = (uint16_t)((uint16_t)(b00 + b01) + (uint16_t)(b10 + b11)) >> 2;
+			const uint8_t r = (uint16_t)(r00 + r01 + r10 + r11) >> 2;
+			const uint8_t g = (uint16_t)(g00 + g01 + g10 + g11) >> 2;
+			const uint8_t b = (uint16_t)(b00 + b01 + b10 + b11) >> 2;
 
-			*u0 = (uint16_t)((int16_t)(KRUi * r + KGUi * g) + (int16_t)(KBUi * b + Cbias)) >> SC;
-			*v0 = (uint16_t)((int16_t)(KRVi * r + KGVi * g) + (int16_t)(KBVi * b + Cbias)) >> SC;
+			*u0 = (uint16_t)(Cbias + KRUi * r + KGUi * g + KBUi * b) >> SC;
+			*v0 = (uint16_t)(Cbias + KRVi * r + KGVi * g + KBVi * b) >> SC;
 
 			p0 += 2 * 4;
 			y0 += 2;
