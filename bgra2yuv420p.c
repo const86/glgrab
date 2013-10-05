@@ -60,40 +60,41 @@ static const int8_t KRVi = KRV * (1 << SC) + 0.5;
 static const int8_t KGVi = KGV * (1 << SC) - 0.5;
 static const int8_t KBVi = KBV * (1 << SC) - 0.5;
 
+static uint8_t avg(uint16_t a0, uint16_t a1) {
+	return (uint16_t)(a0 + a1 + 1u) >> 1;
+}
+
+static uint8_t avg1(uint8_t a00, uint8_t a10, uint8_t a01, uint8_t a11) {
+	return ~avg(~avg(a00, a10), ~avg(a01, a11));
+}
+
+static void bgra2yuv420p_2x2(const uint8_t *restrict p0, const uint8_t *restrict p1,
+	uint8_t *restrict y0, uint8_t *restrict y1, uint8_t *restrict u, uint8_t *restrict v) {
+	y0[0] = (uint16_t)(Ybias + KBYi * p0[0] + KGYi * p0[1] + KRYi * p0[2]) >> SY;
+	y0[1] = (uint16_t)(Ybias + KBYi * p0[4] + KGYi * p0[5] + KRYi * p0[6]) >> SY;
+	y1[0] = (uint16_t)(Ybias + KBYi * p1[0] + KGYi * p1[1] + KRYi * p1[2]) >> SY;
+	y1[1] = (uint16_t)(Ybias + KBYi * p1[4] + KGYi * p1[5] + KRYi * p1[6]) >> SY;
+
+	const uint8_t b = avg1(p0[0], p1[0], p0[4], p1[4]);
+	const uint8_t g = avg1(p0[1], p1[1], p0[5], p1[5]);
+	const uint8_t r = avg1(p0[2], p1[2], p0[6], p1[6]);
+
+	*u = (uint16_t)(Cbias + KBUi * b + KGUi * g + KRUi * r) >> SC;
+	*v = (uint16_t)(Cbias + KBVi * b + KGVi * g + KRVi * r) >> SC;
+}
+
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)) && defined(__SSSE3__)
 
 #include <tmmintrin.h>
 
-static void bgra2yuv420p_2x2(const void *restrict bgra0, const void *restrict bgra1,
-	void *restrict y0, void *restrict y1, void *restrict u, void *restrict v) {
-	const __m64 Y = _mm_set_pi8(0, KRYi, KGYi, KBYi, 0, KRYi, KGYi, KBYi);
-	const __m64 Yb = _mm_set1_pi16(Ybias);
+static __m128i avg32(const __m128i p0[2], const __m128i p1[2]) {
+	const __m128i I = _mm_set1_epi8(~0);
 
-	const __m64 U = _mm_set_pi8(0, 0, 0, 0, 0, KRUi, KGUi, KBUi);
-	const __m64 V = _mm_set_pi8(0, 0, 0, 0, 0, KRVi, KGVi, KBVi);
-	const __m64 Cb = _mm_set_pi16(0, Cbias, 0, Cbias);
+	const __m128 a0 = _mm_castsi128_ps(_mm_xor_si128(_mm_avg_epu8(p0[0], p1[0]), I));
+	const __m128 a1 = _mm_castsi128_ps(_mm_xor_si128(_mm_avg_epu8(p0[1], p1[1]), I));
 
-	const __m64 p0 = *(const __m64 *)bgra0;
-	const __m64 p1 = *(const __m64 *)bgra1;
-
-	const __m64 a01 = _mm_avg_pu8(p0, p1);
-	const __m64 aa = _mm_avg_pu8(a01, _mm_shuffle_pi16(a01, _MM_SHUFFLE(1, 0, 3, 2)));
-
-	const __m64 yyyy = _mm_add_pi16(Yb, _mm_hadd_pi16(_mm_maddubs_pi16(p0, Y), _mm_maddubs_pi16(p1, Y)));
-	const __m64 u0v0 = _mm_add_pi16(Cb, _mm_hadd_pi16(_mm_maddubs_pi16(aa, U), _mm_maddubs_pi16(aa, V)));
-	const __m64 yyyyu0v0 = _mm_packs_pu16(_mm_srli_pi16(yyyy, SY), _mm_srli_pi16(u0v0, SC));
-
-	*(uint16_t *)y0 = _mm_extract_pi16(yyyyu0v0, 0);
-	*(uint16_t *)y1 = _mm_extract_pi16(yyyyu0v0, 1);
-	*(uint8_t *)u = _mm_extract_pi16(yyyyu0v0, 2);
-	*(uint8_t *)v = _mm_extract_pi16(yyyyu0v0, 3);
-}
-
-static __m128i avg(const __m128i p0[2], const __m128i p1[2]) {
-	const __m128 a0 = _mm_castsi128_ps(_mm_avg_epu8(p0[0], p1[0]));
-	const __m128 a1 = _mm_castsi128_ps(_mm_avg_epu8(p0[1], p1[1]));
-	return _mm_avg_epu8(_mm_castps_si128(_mm_shuffle_ps(a0, a1, _MM_SHUFFLE(2, 0, 2, 0))),
-		_mm_castps_si128(_mm_shuffle_ps(a0, a1, _MM_SHUFFLE(3, 1, 3, 1))));
+	return _mm_xor_si128(_mm_avg_epu8(_mm_castps_si128(_mm_shuffle_ps(a0, a1, _MM_SHUFFLE(2, 0, 2, 0))),
+			_mm_castps_si128(_mm_shuffle_ps(a0, a1, _MM_SHUFFLE(3, 1, 3, 1)))), I);
 }
 
 static void dot(void *c, const __m128i p[4], __m128i K, __m128i B, int S) {
@@ -124,8 +125,8 @@ static void bgra2yuv420p_32x2(const void *restrict bgra0, const void *restrict b
 	dot((__m128i *)y1 + 1, p1 + 4, Y, Yb, SY);
 
 	const __m128i a[4] = {
-		avg(p0 + 0, p1 + 0), avg(p0 + 2, p1 + 2),
-		avg(p0 + 4, p1 + 4), avg(p0 + 6, p1 + 6)
+		avg32(p0 + 0, p1 + 0), avg32(p0 + 2, p1 + 2),
+		avg32(p0 + 4, p1 + 4), avg32(p0 + 6, p1 + 6)
 	};
 
 	dot(u, a, U, Cb, SC);
@@ -163,8 +164,6 @@ void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
 		u += u_stride;
 		v += v_stride;
 	}
-
-	_mm_empty();
 }
 
 #else
@@ -172,29 +171,14 @@ void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
 void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
 	uint8_t *restrict y, ptrdiff_t y_stride, uint8_t *restrict u, ptrdiff_t u_stride,
 	uint8_t *restrict v, ptrdiff_t v_stride, size_t width, size_t height) {
+	const size_t step2 = width / 2;
+
 	for (size_t row2 = 0; row2 < height / 2; row2++) {
-		const uint8_t *restrict p0 = bgra;
-		uint8_t *restrict y0 = y, *restrict u0 = u, *restrict v0 = v;
+		const uint8_t *p0 = bgra;
+		uint8_t *y0 = y, *u0 = u, *v0 = v;
 
-		for (size_t col2 = 0; col2 < width / 2; col2++) {
-			const uint8_t *restrict p1 = p0 + bgra_stride;
-			uint8_t *restrict y1 = y0 + y_stride;
-
-			const uint8_t b00 = p0[0], g00 = p0[1], r00 = p0[2], b01 = p0[4], g01 = p0[5], r01 = p0[6];
-			const uint8_t b10 = p1[0], g10 = p1[1], r10 = p1[2], b11 = p1[4], g11 = p1[5], r11 = p1[6];
-
-			y0[0] = (uint16_t)(Ybias + KRYi * r00 + KGYi * g00 + KBYi * b00) >> SY;
-			y0[1] = (uint16_t)(Ybias + KRYi * r01 + KGYi * g01 + KBYi * b01) >> SY;
-			y1[0] = (uint16_t)(Ybias + KRYi * r10 + KGYi * g10 + KBYi * b10) >> SY;
-			y1[1] = (uint16_t)(Ybias + KRYi * r11 + KGYi * g11 + KBYi * b11) >> SY;
-
-			const uint8_t r = (uint16_t)(r00 + r01 + r10 + r11) >> 2;
-			const uint8_t g = (uint16_t)(g00 + g01 + g10 + g11) >> 2;
-			const uint8_t b = (uint16_t)(b00 + b01 + b10 + b11) >> 2;
-
-			*u0 = (uint16_t)(Cbias + KRUi * r + KGUi * g + KBUi * b) >> SC;
-			*v0 = (uint16_t)(Cbias + KRVi * r + KGVi * g + KBVi * b) >> SC;
-
+		for (size_t i = 0; i < step2; i++) {
+			bgra2yuv420p_2x2(p0, p0 + bgra_stride, y0, y0 + y_stride, u0, v0);
 			p0 += 2 * 4;
 			y0 += 2;
 			u0 += 1;
