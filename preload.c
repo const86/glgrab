@@ -121,7 +121,7 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 	}
 
 	static struct glgrab_frame *frame;
-	static GLuint pbo;
+	static GLuint fbo, render, pbo;
 
 	GLXContext ctx = NULL, current = glXGetCurrentContext();
 
@@ -131,6 +131,8 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 		Window none = None;
 		__atomic_compare_exchange_n(&mainwin, &none, drawable, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
 
+		glGenFramebuffers(1, &fbo);
+		glGenRenderbuffers(1, &render);
 		glGenBuffers(1, &pbo);
 
 		frame = NULL;
@@ -160,11 +162,32 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
 		glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
 
+		GLint read_fbo, draw_fbo, render_orig;
+		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
+		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
+		glGetIntegerv(GL_RENDERBUFFER_BINDING, &render_orig);
+
+		glBindRenderbuffer(GL_RENDERBUFFER, render);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA, width, height);
+		glBindRenderbuffer(GL_RENDERBUFFER, render_orig);
+
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, render);
+
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 		glReadBuffer(GL_BACK);
+
+		glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
 		glPixelStorei(GL_PACK_ALIGNMENT, 8);
 
 		glBufferData(GL_PIXEL_PACK_BUFFER, linewidth(width) * height, NULL, GL_STREAM_READ);
 		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
 
 		glReadBuffer(read_buffer);
 		glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
