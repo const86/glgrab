@@ -54,6 +54,19 @@ static void fake_glXDestroyContext(Display *dpy, GLXContext ctx) {
 	}
 }
 
+static PFNGLXCREATEWINDOWPROC real_glXCreateWindow;
+
+typedef GLXWindow (*glXCreateWindow_hook_t)(PFNGLXCREATEWINDOWPROC, Display *, GLXFBConfig, Window, const int *);
+static glXCreateWindow_hook_t glgrab_glXCreateWindow;
+
+static GLXWindow fake_glXCreateWindow(Display *dpy, GLXFBConfig config, Window win, const int *attribList) {
+	if (glgrab_glXCreateWindow) {
+		return glgrab_glXCreateWindow(real_glXCreateWindow, dpy, config, win, attribList);
+	} else {
+		return real_glXCreateWindow(dpy, config, win, attribList);
+	}
+}
+
 static PFNGLXGETPROCADDRESSPROC real_glXGetProcAddressARB;
 
 static __GLXextFuncPtr fake_glXGetProcAddressARB(const GLubyte *procname) {
@@ -65,6 +78,9 @@ static __GLXextFuncPtr fake_glXGetProcAddressARB(const GLubyte *procname) {
 	} else if (strcmp((const char *)procname, "glXDestroyContext") == 0) {
 		real_glXDestroyContext = (glXDestroyContext_t)addr;
 		addr = (__GLXextFuncPtr)&fake_glXDestroyContext;
+	} else if (strcmp((const char *)procname, "glXCreateWindow") == 0) {
+		real_glXCreateWindow = (PFNGLXCREATEWINDOWPROC)addr;
+		addr = (__GLXextFuncPtr)&fake_glXCreateWindow;
 	}
 
 	return addr;
@@ -113,6 +129,9 @@ uintptr_t la_symbind(ElfW(Sym) *sym, unsigned int ndx, uintptr_t *refcook,
 	} else if (strcmp(symname, "glXDestroyContext") == 0) {
 		real_glXDestroyContext = (glXDestroyContext_t)addr;
 		addr = (uintptr_t)&fake_glXDestroyContext;
+	} else if (strcmp(symname, "glXCreateWindow") == 0) {
+		real_glXCreateWindow = (PFNGLXCREATEWINDOWPROC)addr;
+		addr = (uintptr_t)&fake_glXCreateWindow;
 	} else if (strcmp(symname, "glXGetProcAddressARB") == 0) {
 		real_glXGetProcAddressARB = (PFNGLXGETPROCADDRESSPROC)addr;
 		addr = (uintptr_t)&fake_glXGetProcAddressARB;
@@ -120,6 +139,8 @@ uintptr_t la_symbind(ElfW(Sym) *sym, unsigned int ndx, uintptr_t *refcook,
 		glgrab_glXSwapBuffers = (glXSwapBuffers_hook_t)addr;
 	} else if (strcmp(symname, "glgrab_glXDestroyContext") == 0) {
 		glgrab_glXDestroyContext = (glXDestroyContext_hook_t)addr;
+	} else if (strcmp(symname, "glgrab_glXCreateWindow") == 0) {
+		glgrab_glXCreateWindow = (glXCreateWindow_hook_t)addr;
 	}
 
 	return addr;

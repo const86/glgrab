@@ -82,26 +82,25 @@ static bool init_mrb(void) {
 	return res == done;
 }
 
-static bool x11_error_found;
+static volatile GLXContext mainctx;
+static volatile Window mainwin;
 
-static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
-	x11_error_found = true;
-	return 0;
+GLXWindow glgrab_glXCreateWindow(PFNGLXCREATEWINDOWPROC real,
+	Display *dpy, GLXFBConfig config, Window win, const int *attribList) {
+	GLXWindow glxwin = real(dpy, config, win, attribList);
+
+	if (glxwin != None)
+		__atomic_store_n(&mainwin, win, __ATOMIC_RELEASE);
+
+	return glxwin;
 }
 
-static void get_window_size_x11(Display *dpy, XID win, unsigned *width, unsigned *height) {
+static void get_window_size(Display *dpy, unsigned *width, unsigned *height) {
 	Window w;
 	unsigned u;
 	int i;
-	XGetGeometry(dpy, win, &w, &i, &i, width, height, &u, &u);
+	XGetGeometry(dpy, __atomic_load_n(&mainwin, __ATOMIC_CONSUME), &w, &i, &i, width, height, &u, &u);
 }
-
-static void get_window_size_glx(Display *dpy, XID drawable, unsigned *width, unsigned *height) {
-	glXQueryDrawable(dpy, drawable, GLX_WIDTH, width);
-	glXQueryDrawable(dpy, drawable, GLX_HEIGHT, height);
-}
-
-static volatile GLXContext mainctx;
 
 void glgrab_glXDestroyContext(void (*real)(Display *, GLXContext), Display *dpy, GLXContext ctx) {
 	GLXContext current = ctx;
@@ -123,33 +122,26 @@ void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, G
 
 	static struct glgrab_frame *frame;
 	static GLuint pbo;
-	static void (*get_window_size)(Display *, XID, unsigned *, unsigned *);
 
-	unsigned width = 0, height = 0;
 	GLXContext ctx = NULL, current = glXGetCurrentContext();
 
 	if (__atomic_compare_exchange_n(&mainctx, &ctx, current, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
 		ctx = current;
+
+		Window none = None;
+		__atomic_compare_exchange_n(&mainwin, &none, drawable, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
+
 		glGenBuffers(1, &pbo);
+
 		frame = NULL;
-
-		XErrorHandler error_handler = XSetErrorHandler(x11_error_handler);
-		x11_error_found = false;
-		get_window_size_glx(dpy, drawable, &width, &height);
-		XSync(dpy, false);
-		XSetErrorHandler(error_handler);
-
-		if (x11_error_found) {
-			get_window_size = get_window_size_x11;
-			get_window_size(dpy, drawable, &width, &height);
-		} else
-			get_window_size = get_window_size_glx;
 	} else if (ctx != current) {
+		__atomic_store_n(&running, false, __ATOMIC_RELEASE);
 		real(dpy, drawable);
 		return;
-	} else {
-		get_window_size(dpy, drawable, &width, &height);
 	}
+
+	unsigned width = 0, height = 0;
+	get_window_size(dpy, &width, &height);
 
 	GLint pixel_pack_buffer;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
@@ -203,6 +195,9 @@ static void __attribute__((constructor)) init(void) {
 
 			if (!dlsym(h, "glgrab_glXDestroyContext"))
 				fprintf(stderr, "glgrab: failed to bind glXDestroyContext hook: %s\n", dlerror());
+
+			if (!dlsym(h, "glgrab_glXCreateWindow"))
+				fprintf(stderr, "glgrab: failed to bind glXCreateWindow hook: %s\n", dlerror());
 
 			dlclose(h);
 		} else {
