@@ -61,6 +61,6 @@ then
 fi
 
 export GLGRAB_MRB GLGRAB_BUFSIZE GLGRAB_MAXFRAME
-LD_AUDIT="${LD_AUDIT:+${LD_AUDIT}:}${GLGRAB_LIBDIR}/libglgrab-audit.so" \
-	LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}${GLGRAB_LIBDIR}/libglgrab-preload.so" \
+LD_AUDIT="${LD_AUDIT:+${LD_AUDIT}:}${GLGRAB_LIBDIR}/libglgrab-audit-glx.so" \
+	LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}${GLGRAB_LIBDIR}/libglgrab-glx.so" \
 	${exec} "$@"

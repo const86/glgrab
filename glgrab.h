@@ -21,7 +21,10 @@
 #ifndef _GLGRAB_H
 #define _GLGRAB_H
 
+#include <GL/gl.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include "mrb.h"
 
 /**
  * Structure of grabbed frame as passed through MRB.
@@ -39,5 +42,24 @@ struct glgrab_frame {
 };
 
 extern struct AVInputFormat glgrab_avformat;
+
+struct glgrab {
+	struct mrb rb;
+	uint64_t start_time;
+
+	struct glgrab_frame *frame;
+	GLuint fbo;
+	GLuint rbo;
+	GLuint pbo;
+
+	volatile int state;
+};
+
+int glgrab_init(struct glgrab *, const char *path, uint64_t bufsize, uint64_t max_frame_size);
+int glgrab_init_from_env(struct glgrab *);
+bool glgrab_destroy(struct glgrab *);
+
+bool glgrab_reset(struct glgrab *);
+bool glgrab_take_frame(struct glgrab *, uint32_t width, uint32_t height);
 
 #endif

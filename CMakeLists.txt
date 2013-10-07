@@ -7,13 +7,22 @@ set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
 
 add_definitions(-std=c99 -pedantic -Wall -fvisibility=hidden)
 
-add_library(glgrab-audit SHARED audit.c)
+add_library(glgrab-audit-glx SHARED
+  audit.c
+  audit-glx.c
+)
 
-add_library(glgrab-preload SHARED
-  preload.c
+add_library(glgrab SHARED
+  glgrab.c
   mrb_write.c
-  )
-target_link_libraries(glgrab-preload dl rt GL)
+)
+target_link_libraries(glgrab rt GL)
+set_target_properties(glgrab PROPERTIES SOVERSION 0)
+
+add_library(glgrab-glx SHARED
+  glx.c
+)
+target_link_libraries(glgrab-glx glgrab dl GL X11)
 
 add_executable(glgrab-monitor EXCLUDE_FROM_ALL
   monitor.c
@@ -44,11 +53,11 @@ set_target_properties(glgrab-export PROPERTIES
 configure_file(glgrab.in glgrab ESCAPE_QUOTES @ONLY)
 configure_file(glgrab-av.in glgrab-av ESCAPE_QUOTES @ONLY)
 
-install(TARGETS glgrab-avformat
+install(TARGETS glgrab glgrab-avformat
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-install(TARGETS glgrab-audit glgrab-preload glgrab-av-preload glgrab-export
+install(TARGETS glgrab-audit-glx glgrab-glx glgrab-av-preload glgrab-export
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${GLGRAB_LIBDIR}
 )
