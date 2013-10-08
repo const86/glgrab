@@ -12,6 +12,11 @@ add_library(glgrab-audit-glx SHARED
   audit-glx.c
 )
 
+add_library(glgrab-audit-egl SHARED
+  audit.c
+  audit-egl.c
+)
+
 add_library(glgrab SHARED
   glgrab.c
   mrb_write.c
@@ -23,6 +28,11 @@ add_library(glgrab-glx SHARED
   glx.c
 )
 target_link_libraries(glgrab-glx glgrab dl GL X11)
+
+add_library(glgrab-egl SHARED
+  egl.c
+)
+target_link_libraries(glgrab-egl glgrab dl EGL)
 
 add_executable(glgrab-monitor EXCLUDE_FROM_ALL
   monitor.c
