@@ -168,7 +168,8 @@ void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
 
 #else
 
-void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
+void __attribute__((noinline, optimize("tree-vectorize")))
+bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
 	uint8_t *restrict y, ptrdiff_t y_stride, uint8_t *restrict u, ptrdiff_t u_stride,
 	uint8_t *restrict v, ptrdiff_t v_stride, size_t width, size_t height) {
 	const size_t step2 = width / 2;
