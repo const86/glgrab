@@ -23,6 +23,7 @@
 #include "audit.h"
 
 #include <GL/glx.h>
+#include <X11/X.h>
 
 typedef void (*glXSwapBuffers_t)(Display *, GLXDrawable);
 static glXSwapBuffers_t real_glXSwapBuffers;
@@ -38,17 +39,9 @@ static GLXWindow (*glgrab_glXCreateWindow)(PFNGLXCREATEWINDOWPROC, Display *, GL
 static PFNGLXDESTROYWINDOWPROC real_glXDestroyWindow;
 static void (*glgrab_glXDestroyWindow)(PFNGLXDESTROYWINDOWPROC, Display *, GLXWindow);
 
-static PFNGLXCREATEPIXMAPPROC real_glXCreatePixmap;
-static GLXPixmap (*glgrab_glXCreatePixmap)(PFNGLXCREATEPIXMAPPROC, Display *, GLXFBConfig, Pixmap, const int *);
-
-static PFNGLXDESTROYPIXMAPPROC real_glXDestroyPixmap;
-static void (*glgrab_glXDestroyPixmap)(PFNGLXDESTROYPIXMAPPROC, Display *, GLXPixmap);
-
-static PFNGLXCREATEPBUFFERPROC real_glXCreatePbuffer;
-static GLXPbuffer (*glgrab_glXCreatePbuffer)(PFNGLXCREATEPBUFFERPROC, Display *, GLXFBConfig, const int *);
-
-static PFNGLXDESTROYPBUFFERPROC real_glXDestroyPbuffer;
-static void (*glgrab_glXDestroyPbuffer)(PFNGLXDESTROYPBUFFERPROC, Display *, GLXPbuffer);
+typedef int (*XDestroyWindow_t)(Display *, Window);
+static XDestroyWindow_t real_XDestroyWindow;
+static int (*glgrab_XDestroyWindow)(XDestroyWindow_t, Display *, Window);
 
 static PFNGLXGETPROCADDRESSPROC real_glXGetProcAddress;
 
@@ -59,10 +52,7 @@ const struct hook hooks[] = {
 	{"glgrab_glXDestroyContext", (func_pp)&glgrab_glXDestroyContext},
 	{"glgrab_glXCreateWindow", (func_pp)&glgrab_glXCreateWindow},
 	{"glgrab_glXDestroyWindow", (func_pp)&glgrab_glXDestroyWindow},
-	{"glgrab_glXCreatePixmap", (func_pp)&glgrab_glXCreatePixmap},
-	{"glgrab_glXDestroyPixmap", (func_pp)&glgrab_glXDestroyPixmap},
-	{"glgrab_glXCreatePbuffer", (func_pp)&glgrab_glXCreatePbuffer},
-	{"glgrab_glXDestroyPbuffer", (func_pp)&glgrab_glXDestroyPbuffer},
+	{"glgrab_XDestroyWindow", (func_pp)&glgrab_XDestroyWindow},
 	{0}
 };
 
@@ -98,35 +88,11 @@ static void fake_glXDestroyWindow(Display *dpy, GLXWindow window) {
 	}
 }
 
-static GLXPixmap fake_glXCreatePixmap(Display *dpy, GLXFBConfig config, Pixmap pixmap, const int *attribList) {
-	if (glgrab_glXCreatePixmap) {
-		return glgrab_glXCreatePixmap(real_glXCreatePixmap, dpy, config, pixmap, attribList);
+static int fake_XDestroyWindow(Display *dpy, Window window) {
+	if (glgrab_XDestroyWindow) {
+		return glgrab_XDestroyWindow(real_XDestroyWindow, dpy, window);
 	} else {
-		return real_glXCreatePixmap(dpy, config, pixmap, attribList);
-	}
-}
-
-static void fake_glXDestroyPixmap(Display *dpy, GLXPixmap pixmap) {
-	if (glgrab_glXDestroyPixmap) {
-		glgrab_glXDestroyPixmap(real_glXDestroyPixmap, dpy, pixmap);
-	} else {
-		real_glXDestroyPixmap(dpy, pixmap);
-	}
-}
-
-static GLXPbuffer fake_glXCreatePbuffer(Display *dpy, GLXFBConfig config, const int *attribList) {
-	if (glgrab_glXCreatePbuffer) {
-		return glgrab_glXCreatePbuffer(real_glXCreatePbuffer, dpy, config, attribList);
-	} else {
-		return real_glXCreatePbuffer(dpy, config, attribList);
-	}
-}
-
-static void fake_glXDestroyPbuffer(Display *dpy, GLXPbuffer pbuf) {
-	if (glgrab_glXDestroyPbuffer) {
-		glgrab_glXDestroyPbuffer(real_glXDestroyPbuffer, dpy, pbuf);
-	} else {
-		real_glXDestroyPbuffer(dpy, pbuf);
+		return real_XDestroyWindow(dpy, window);
 	}
 }
 
@@ -140,10 +106,7 @@ const struct sub subs[] = {
 	{"glXDestroyContext", (func_pp)&real_glXDestroyContext, (func_p)fake_glXDestroyContext},
 	{"glXCreateWindow", (func_pp)&real_glXCreateWindow, (func_p)fake_glXCreateWindow},
 	{"glXDestroyWindow", (func_pp)&real_glXDestroyWindow, (func_p)fake_glXDestroyWindow},
-	{"glXCreatePixmap", (func_pp)&real_glXCreatePixmap, (func_p)fake_glXCreatePixmap},
-	{"glXDestroyPixmap", (func_pp)&real_glXDestroyPixmap, (func_p)fake_glXDestroyPixmap},
-	{"glXCreatePbuffer", (func_pp)&real_glXCreatePbuffer, (func_p)fake_glXCreatePbuffer},
-	{"glXDestroyPbuffer", (func_pp)&real_glXDestroyPbuffer, (func_p)fake_glXDestroyPbuffer},
+	{"XDestroyWindow", (func_pp)&real_XDestroyWindow, (func_p)fake_XDestroyWindow},
 	{0}
 };
 

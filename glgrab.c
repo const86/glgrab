@@ -26,7 +26,9 @@
 #include <GL/gl.h>
 #include <errno.h>
 #include <sched.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #pragma GCC visibility push(default)
@@ -64,6 +66,8 @@ int glgrab_init(struct glgrab *g, const char *path, uint64_t bufsize, uint64_t m
 		g->start_time = now();
 		state = ready;
 	} else {
+		fprintf(stderr, "glgrab: Failed to create buffer \"%s\" size %" PRIu64 ": %s\n",
+			path, bufsize, strerror(err));
 		state = failed;
 	}
 
@@ -187,6 +191,8 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		g->frame->height = height;
 		g->frame->ns = now() - g->start_time;
 		res = true;
+	} else {
+		fprintf(stderr, "glgrab: Failed to allocate frame %ux%u in buffer\n", width, height);
 	}
 
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);

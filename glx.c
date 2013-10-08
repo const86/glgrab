@@ -1,4 +1,4 @@
-/* preload.c - LD_PRELOAD'ed hooks
+/* LD_PRELOAD'ed hooks for GLX
  *
  * Copyright 2013 Constantin Baranov
  *
@@ -37,7 +37,7 @@
 struct glxgrab {
 	struct glgrab gl;
 	LIST_HEAD(, winmap) winmap;
-	GLXContext ctx;
+	volatile GLXContext ctx;
 	volatile bool lock;
 };
 
@@ -111,77 +111,83 @@ void glgrab_glXDestroyWindow(PFNGLXDESTROYWINDOWPROC real, Display *dpy, GLXWind
 	forget_window(&glx, window);
 }
 
-GLXPixmap glgrab_glXCreatePixmap(PFNGLXCREATEPIXMAPPROC real,
-	Display *dpy, GLXFBConfig config, Pixmap pixmap, const int *attribList) {
-	GLXPixmap glxpixmap = real(dpy, config, pixmap, attribList);
-
-	if (glxpixmap != None)
-		register_window(&glx, None, glxpixmap);
-
-	return glxpixmap;
-}
-
-void glgrab_glXDestroyPixmap(PFNGLXDESTROYWINDOWPROC real, Display *dpy, GLXPixmap pixmap) {
-	real(dpy, pixmap);
-	forget_window(&glx, pixmap);
-}
-
-GLXPbuffer glgrab_glXCreatePbuffer(PFNGLXCREATEPBUFFERPROC real,
-	Display *dpy, GLXFBConfig config, const int *attribList) {
-	GLXPbuffer pbuf = real(dpy, config, attribList);
-
-	if (pbuf != None)
-		register_window(&glx, None, pbuf);
-
-	return pbuf;
-}
-
-void glgrab_glXDestroyPbuffer(PFNGLXDESTROYPBUFFERPROC real, Display *dpy, GLXPbuffer pbuf) {
-	real(dpy, pbuf);
-	forget_window(&glx, pbuf);
+int glgrab_XDestroyWindow(int (*real)(Display *, Window), Display *dpy, Window window) {
+	int res = real(dpy, window);
+	forget_window(&glx, window);
+	return res;
 }
 
 void glgrab_glXDestroyContext(void (*real)(Display *, GLXContext), Display *dpy, GLXContext ctx) {
-	lock(&glx);
-	if (glx.ctx == ctx)
-		glx.ctx = NULL;
-
-	unlock(&glx);
+	GLXContext curr = ctx;
+	__atomic_compare_exchange_n(&glx.ctx, &curr, NULL, false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME);
 	real(dpy, ctx);
+}
+
+static void get_window_size(Display *dpy, Window window, unsigned *width, unsigned *height) {
+	unsigned u;
+	int i;
+	Window r;
+	XGetGeometry(dpy, window, &r, &i, &i, width, height, &u, &u);
+}
+
+static bool get_window_size_error;
+
+static int get_window_size_error_handler(Display *dpy, XErrorEvent *ev) {
+	get_window_size_error = true;
+	return 0;
+}
+
+static bool get_window_size_safe(Display *dpy, Window window, unsigned *width, unsigned *height) {
+	XSync(dpy, False);
+	int (*orig)(Display *, XErrorEvent *) = XSetErrorHandler(get_window_size_error_handler);
+
+	get_window_size_error = false;
+	get_window_size(dpy, window, width, height);
+
+	XSetErrorHandler(orig);
+	return !get_window_size_error;
+}
+
+static void take_frame(struct glxgrab *g, Display *dpy, GLXContext ctx, GLXDrawable drawable) {
+	unsigned width = 0, height = 0;
+
+	lock(g);
+	struct winmap *m = find_x11(g, drawable);
+
+	if (m == NULL) {
+		unlock(g);
+		Window window = get_window_size_safe(dpy, drawable, &width, &height) ? drawable : None;
+		register_window(g, window, drawable);
+
+		if (window == None)
+			return;
+	} else {
+		Window window = m->x11;
+		unlock(g);
+
+		if (window == None)
+			return;
+
+		get_window_size(dpy, window, &width, &height);
+	}
+
+	GLXContext curr = NULL;
+	if (__atomic_compare_exchange_n(&g->ctx, &curr, ctx, false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME)) {
+		if (glgrab_init_from_env(&g->gl) != 0 || !glgrab_reset(&g->gl))
+			return;
+	} else {
+		if (curr != ctx)
+			return;
+	}
+
+	glgrab_take_frame(&g->gl, width, height);
 }
 
 void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
 	GLXContext ctx = glXGetCurrentContext();
-	int err = 0;
 
-	if (ctx != NULL && (err = glgrab_init_from_env(&glx.gl)) == 0) {
-		lock(&glx);
-
-		struct winmap *m = find_x11(&glx, drawable);
-		Window win = m == NULL ? drawable : m->x11;
-
-		bool match = true;
-		if (win != None && glx.ctx == NULL && glgrab_reset(&glx.gl))
-			glx.ctx = ctx;
-		else if (glx.ctx != ctx)
-			match = false;
-
-		unlock(&glx);
-
-		if (match) {
-			unsigned width, height, u;
-			int i;
-			Window r;
-			XGetGeometry(dpy, win, &r, &i, &i, &width, &height, &u, &u);
-
-			if (!glgrab_take_frame(&glx.gl, width, height)) {
-				fputs("glgrab: failed to capture frame\n", stderr);
-			}
-		}
-	} else if (err != 0) {
-		fprintf(stderr, "glgrab: failed to create ring buffer \"%s\" size (%s): %s\n",
-			getenv("GLGRAB_MRB"), getenv("GLGRAB_BUFSIZE"), strerror(err));
-	}
+	if (ctx != NULL && glXGetCurrentDrawable() == drawable && glXGetCurrentReadDrawable() == drawable)
+		take_frame(&glx, dpy, ctx, drawable);
 
 	real(dpy, drawable);
 }
@@ -199,10 +205,7 @@ static void __attribute__((constructor)) init(void) {
 		bind_hook(h, "glgrab_glXDestroyContext");
 		bind_hook(h, "glgrab_glXCreateWindow");
 		bind_hook(h, "glgrab_glXDestroyWindow");
-		bind_hook(h, "glgrab_glXCreatePixmap");
-		bind_hook(h, "glgrab_glXDestroyPixmap");
-		bind_hook(h, "glgrab_glXCreatePbuffer");
-		bind_hook(h, "glgrab_glXDestroyPbuffer");
+		bind_hook(h, "glgrab_XDestroyWindow");
 
 		dlclose(h);
 	} else {
