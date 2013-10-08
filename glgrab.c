@@ -56,7 +56,7 @@ static void release(struct glgrab *g, enum state state) {
 int glgrab_init(struct glgrab *g, const char *path, uint64_t bufsize, uint64_t max_frame_size) {
 	enum state state = virgin;
 	if (!__atomic_compare_exchange_n(&g->state, &state, initializing,
-			false, __ATOMIC_CONSUME, __ATOMIC_CONSUME)) {
+			false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME)) {
 		return state == failed ? EINVAL : 0;
 	}
 
