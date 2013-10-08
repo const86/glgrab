@@ -1,0 +1,66 @@
+#!/bin/sh -e
+
+GLGRAB_LIBDIR="@GLGRAB_LIBDIR@"
+
+GLGRAB_MRB="/dev/shm/glgrab-$$.mrb"
+unset GLGRAB_BUFSIZE GLGRAB_MAXFRAME
+exec=""
+
+help() {
+	exec >&2
+	echo "Usage: $0 [OPTION...] [--] COMMAND [ARG...]"
+	echo "Options:"
+	echo " -o PATH  path to glgrab exchange buffer"
+	echo " -b SIZE  size of the buffer in MiB"
+	echo " -f SIZE  maximum size of single video frame in megapixels"
+	echo " -k       keep exchange buffer after exit"
+}
+
+while getopts b:f:ko: opt
+do
+	case "$opt" in
+		b)
+			GLGRAB_BUFSIZE=$((OPTARG << 20))
+			;;
+		f)
+			GLGRAB_MAXFRAME=$((OPTARG * 4000000 + 256))
+			;;
+		k)
+			exec="exec"
+			;;
+		o)
+			GLGRAB_MRB="${OPTARG}"
+			;;
+		?)
+			help
+			exit 1
+			;;
+	esac
+done
+
+shift $((OPTIND - 1))
+
+if [ $# -lt 1 ]
+then
+	echo "glgrab: no command specified" >&2
+	help
+	exit 1
+fi
+
+if [ -e "${GLGRAB_MRB}" ]
+then
+	echo "glgrab: file ${GLGRAB_MRB} already exists, I won't remove it!" >&2
+	exit 2
+fi
+
+echo "glgrab: buffer will be placed at ${GLGRAB_MRB}" >&2
+
+if [ -z "${exec}" ]
+then
+	trap "rm -f \"${GLGRAB_MRB}\"" EXIT
+fi
+
+export GLGRAB_MRB GLGRAB_BUFSIZE GLGRAB_MAXFRAME
+LD_AUDIT="${LD_AUDIT:+${LD_AUDIT}:}${GLGRAB_LIBDIR}/libglgrab-audit-egl.so" \
+	LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}${GLGRAB_LIBDIR}/libglgrab-egl.so" \
+	${exec} "$@"

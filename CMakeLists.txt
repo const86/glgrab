@@ -2,81 +2,62 @@ cmake_minimum_required(VERSION 2.8)
 project(glgrab)
 include(GNUInstallDirs)
 
+set(WANT_EGL ON CACHE BOOL "Build EGL plugin")
+set(WANT_GLX ON CACHE BOOL "Build GLX plugin")
+set(WANT_FFMPEG ON CACHE BOOL "Build FFmpeg plugin")
+
 set(GLGRAB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/glgrab")
 set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
 
 add_definitions(-std=c99 -pedantic -Wall -fvisibility=hidden)
 
-add_library(glgrab-audit-glx SHARED
-  audit.c
-  audit-glx.c
-)
-
-add_library(glgrab-audit-egl SHARED
-  audit.c
-  audit-egl.c
-)
-
-add_library(glgrab SHARED
-  glgrab.c
-  mrb_write.c
-)
+add_library(glgrab SHARED glgrab.c mrb_write.c)
 target_link_libraries(glgrab rt GL)
 set_target_properties(glgrab PROPERTIES SOVERSION 0)
+install(TARGETS glgrab LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES mrb.h glgrab.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/glgrab)
 
-add_library(glgrab-glx SHARED
-  glx.c
-)
-target_link_libraries(glgrab-glx glgrab dl GL X11)
+if(WANT_GLX)
+  add_library(glgrab-audit-glx SHARED audit.c audit-glx.c)
 
-add_library(glgrab-egl SHARED
-  egl.c
-)
-target_link_libraries(glgrab-egl glgrab dl EGL)
+  add_library(glgrab-glx SHARED glx.c)
+  target_link_libraries(glgrab-glx glgrab dl GL X11)
+  install(TARGETS glgrab-audit-glx glgrab-glx LIBRARY DESTINATION ${GLGRAB_LIBDIR})
 
-add_executable(glgrab-monitor EXCLUDE_FROM_ALL
-  monitor.c
-  mrb_read.c
-)
+  configure_file(glgrab.in glgrab ESCAPE_QUOTES @ONLY)
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/glgrab DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
-add_library(glgrab-avformat SHARED
-  avformat.c
-  bgra2yuv420p.c
-  mrb_read.c
-)
-target_link_libraries(glgrab-avformat avcodec avformat rt)
-set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0)
+if(WANT_EGL)
+  add_library(glgrab-audit-egl SHARED audit.c audit-egl.c)
 
-add_library(glgrab-av-preload SHARED
-  avformat-preload.c
-)
-target_link_libraries(glgrab-av-preload glgrab-avformat)
+  add_library(glgrab-egl SHARED egl.c)
+  target_link_libraries(glgrab-egl glgrab dl EGL)
+  install(TARGETS glgrab-audit-egl glgrab-egl LIBRARY DESTINATION ${GLGRAB_LIBDIR})
 
-add_executable(glgrab-export
-  export.c
-)
-target_link_libraries(glgrab-export glgrab-avformat avcodec avformat avutil avdevice swscale rt)
-set_target_properties(glgrab-export PROPERTIES
-  COMPILE_FLAGS "-pthread"
-  LINK_FLAGS "-pthread")
+  configure_file(glgrab-egl.in glgrab-egl ESCAPE_QUOTES @ONLY)
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/glgrab-egl DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
-configure_file(glgrab.in glgrab ESCAPE_QUOTES @ONLY)
-configure_file(glgrab-av.in glgrab-av ESCAPE_QUOTES @ONLY)
+if(WANT_FFMPEG)
+  add_library(glgrab-avformat SHARED avformat.c bgra2yuv420p.c mrb_read.c)
+  target_link_libraries(glgrab-avformat avcodec avformat rt)
+  set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0)
+  install(TARGETS glgrab-avformat LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-install(TARGETS glgrab glgrab-avformat
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+  add_library(glgrab-av-preload SHARED avformat-preload.c)
+  target_link_libraries(glgrab-av-preload glgrab-avformat)
+  install(TARGETS glgrab-av-preload LIBRARY DESTINATION ${GLGRAB_LIBDIR})
 
-install(TARGETS glgrab-audit-glx glgrab-glx glgrab-av-preload glgrab-export
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${GLGRAB_LIBDIR}
-)
+  add_executable(glgrab-export export.c)
+  target_link_libraries(glgrab-export glgrab-avformat avcodec avformat avutil avdevice swscale rt)
+  set_target_properties(glgrab-export PROPERTIES COMPILE_FLAGS "-pthread" LINK_FLAGS "-pthread")
+  install(TARGETS glgrab-export RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/glgrab
-  ${CMAKE_CURRENT_BINARY_DIR}/glgrab-av
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+  configure_file(glgrab-av.in glgrab-av ESCAPE_QUOTES @ONLY)
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/glgrab-av DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
-install(FILES README
-  DESTINATION ${CMAKE_INSTALL_DOCDIR}
-)
+install(FILES README DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+add_executable(glgrab-monitor EXCLUDE_FROM_ALL monitor.c mrb_read.c)
