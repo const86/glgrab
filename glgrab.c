@@ -138,13 +138,19 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, g->pbo);
 
 	if (g->frame != NULL) {
-		glGetBufferSubData(GL_PIXEL_PACK_BUFFER, 0,
-			linewidth(g->frame->width) * g->frame->height, g->frame->data);
+		size_t size = linewidth(g->frame->width) * g->frame->height;
+		GLvoid *data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, size, GL_MAP_READ_BIT);
+		if (data != NULL) {
+			memcpy(g->frame->data, data, size);
+			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+		}
+
 		resize = g->frame->width != width || g->frame->height != height;
 		mrb_commit(&g->rb);
 	}
 
-	g->frame = mrb_reserve(&g->rb, sizeof(struct glgrab_frame) + linewidth(width) * height);
+	size_t size = linewidth(width) * height;
+	g->frame = mrb_reserve(&g->rb, sizeof(struct glgrab_frame) + size);
 	if (g->frame != NULL) {
 		GLint read_buffer, pack_alignment;
 		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
@@ -168,9 +174,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 			glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 				GL_RENDERBUFFER, g->rbo);
 
-			glBufferData(GL_PIXEL_PACK_BUFFER, linewidth(width) * height, NULL, GL_STREAM_READ);
-		} else {
-			glInvalidateBufferData(g->pbo);
+			glBufferData(GL_PIXEL_PACK_BUFFER, size, NULL, GL_STREAM_READ);
 		}
 
 		glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -180,6 +184,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		glPixelStorei(GL_PACK_ALIGNMENT, 8);
 
 		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, &(GLenum){GL_COLOR_ATTACHMENT0});
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
