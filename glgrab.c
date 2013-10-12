@@ -126,12 +126,27 @@ static unsigned linewidth(unsigned w) {
 	return (w * 4 + 7) & ~7U;
 }
 
+static bool check_error(struct glgrab *g, const char msg[]) {
+	GLenum error = glGetError();
+	if (error == GL_NO_ERROR)
+		return false;
+
+	if (error != g->last_error) {
+		g->last_error = error;
+		fprintf(stderr, "glgrab: error %s: 0x%x\n", msg, error);
+	}
+
+	return true;
+}
+
 bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 	if (!try_lock(g))
 		return false;
 
 	bool res = false;
 	bool resize = true;
+
+	check_error(g, "before grabbing");
 
 	GLint pixel_pack_buffer;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
@@ -146,7 +161,10 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		}
 
 		resize = g->frame->width != width || g->frame->height != height;
-		mrb_commit(&g->rb);
+
+		if (!check_error(g, "reading PBO")) {
+			mrb_commit(&g->rb);
+		}
 	}
 
 	size_t size = linewidth(width) * height;
@@ -192,10 +210,14 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		glReadBuffer(read_buffer);
 		glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
 
-		g->frame->width = width;
-		g->frame->height = height;
-		g->frame->ns = now() - g->start_time;
-		res = true;
+		if (check_error(g, "filling PBO")) {
+			g->frame = NULL;
+		} else {
+			g->frame->width = width;
+			g->frame->height = height;
+			g->frame->ns = now() - g->start_time;
+			res = true;
+		}
 	} else {
 		fprintf(stderr, "glgrab: Failed to allocate frame %ux%u in buffer\n", width, height);
 	}

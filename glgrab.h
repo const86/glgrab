@@ -53,6 +53,7 @@ struct glgrab {
 	GLuint pbo;
 
 	volatile int state;
+	GLenum last_error;
 };
 
 int glgrab_init(struct glgrab *, const char *path, uint64_t bufsize, uint64_t max_frame_size);
