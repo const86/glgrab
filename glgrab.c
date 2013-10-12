@@ -202,7 +202,6 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		glPixelStorei(GL_PACK_ALIGNMENT, 8);
 
 		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-		glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, &(GLenum){GL_COLOR_ATTACHMENT0});
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
