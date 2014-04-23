@@ -95,7 +95,7 @@ int glgrab_init_from_env(struct glgrab *g) {
 	return glgrab_init(g, path, bufsize, str2int(getenv("GLGRAB_MAXFRAME"), bufsize));
 }
 
-bool try_lock(struct glgrab *g) {
+static bool try_lock(struct glgrab *g) {
 	enum state state = ready;
 	return __atomic_compare_exchange_n(&g->state, &state, using, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
