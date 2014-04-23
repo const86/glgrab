@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 2.8)
-project(glgrab)
+project(glgrab C)
+set(VERSION 0.1)
+
 include(GNUInstallDirs)
 
-set(WANT_EGL ON CACHE BOOL "Build EGL plugin")
-set(WANT_GLX ON CACHE BOOL "Build GLX plugin")
-set(WANT_FFMPEG ON CACHE BOOL "Build FFmpeg plugin")
+option(WANT_EGL "Build EGL plugin" ON)
+option(WANT_GLX "Build GLX plugin" ON)
+option(WANT_FFMPEG "Build FFmpeg plugin" ON)
 
 set(GLGRAB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/glgrab")
 set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
@@ -13,7 +15,7 @@ add_definitions(-std=c99 -pedantic -Wall -fvisibility=hidden)
 
 add_library(glgrab SHARED glgrab.c mrb_write.c)
 target_link_libraries(glgrab rt GL)
-set_target_properties(glgrab PROPERTIES SOVERSION 0)
+set_target_properties(glgrab PROPERTIES SOVERSION 0 VERSION ${VERSION})
 install(TARGETS glgrab LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES mrb.h glgrab.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/glgrab)
 
@@ -42,7 +44,7 @@ endif()
 if(WANT_FFMPEG)
   add_library(glgrab-avformat SHARED avformat.c bgra2yuv420p.c mrb_read.c)
   target_link_libraries(glgrab-avformat avcodec avformat rt)
-  set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0)
+  set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0 VERSION ${VERSION})
   install(TARGETS glgrab-avformat LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
   add_library(glgrab-av-preload SHARED avformat-preload.c)
