@@ -61,7 +61,7 @@ static const struct AVOption options[] = {
 	{"poll", "poll interval, in seconds", offsetof(struct glgrab_priv, poll), AV_OPT_TYPE_FLOAT,
 	 {.dbl = 0}, 0, FLT_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{"pixel_format", NULL, offsetof(struct glgrab_priv, pix_fmt), AV_OPT_TYPE_PIXEL_FMT,
-	 {.i64 = AV_PIX_FMT_BGRA}, 0, 0, AV_OPT_FLAG_DECODING_PARAM},
+	 {.i64 = AV_PIX_FMT_BGRA}, AV_PIX_FMT_NONE, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
 	{NULL}
 };
 
