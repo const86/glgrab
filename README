@@ -3,7 +3,6 @@
 GLGrab is an OpenGL image grabber. This package contains
  - The grabber plugin itself and script for easy dealing with it.
  - FFmpeg support for GLGrab as video input.
- - Special tool glgrab-export for multithreaded encoding of grabbed video.
 
  * HOW TO INSTALL *
 
@@ -19,8 +18,7 @@ Though it's better to wrap it in your distro package.
 GLGrab injects special plugin into an OpenGL application. That library catches
 every rendered frame just before it goes to the display. Frames are stored
 in a shared memory buffer visible as a file. You may take frames from that
-buffer either with ffmpeg or glgrab-export, encode, and store into a file in
-virtually any format.
+buffer with ffmpeg, encode, and store into a file in virtually any format.
 
  * HOW TO RUN *
 
@@ -58,25 +56,15 @@ Refer to FFmpeg's manuals at this point. Example:
   glgrab-av ffmpeg -vsync vfr -f glgrab -r 30 -s 1024x768 -i <glgrab buffer> \
       -c:v libx264 -qp 0 video.mov
 
-FFmpeg doesn't deal with multiple CPUs very well. Attempting to grab large
+FFmpeg doesn't deal with multiple CPUs very well. In an attempt to grab large
 and/or high rate video you may be limited by speed of single CPU core. To
-overtake this limitation use the glgrab-export tool. It's based on FFmpeg
-libraries but isn't as feature rich as ffmpeg tool. It can take single
-video only stream, re-encode it in intra-only mode and store to a file.
-Interface is somewhat similar to ffmpeg. Last example eating 4 CPU cores:
-
-  glgrab-export -i glgrab -I framerate=30,video_size=1024x768 <glgrab buffer> \
-      -e libx264 -E qp=0 video.mov -G threads=4
-
-Configuration passed via -I, -E, and -O options is the same as in ffmpeg.
-Refer to `ffmpeg -help full' for the list of those options.
-
-Another way to boost concurrency and overall speed is using built-in colorspace
-conversion function. It's fast but single-threaded, so it still scales worse
-than glgrab-export. Again, the same example:
+overtake this limitation use GLGrab's built-in colorspace conversion function.
+It's fast though still single-threaded. The same example eating 4 CPU cores:
 
   glgrab-av ffmpeg -vsync vfr -f glgrab -r 30 -s 1024x768 -pix_fmt yuv420p \
       -i <glgrab buffer> -c:v libx264 -qp 0 -threads 4 video.mov
 
 The -pix_fmt option enables faster conversion, so that slower ffmpeg's function
-won't be needed. Only yuv420p output format is supported.
+won't be needed. Only yuv420p output format is supported. Depending on whole
+pipeline configuration ffmpeg may automatically switch GLGrab input into the
+yuv420p format.

@@ -51,11 +51,6 @@ if(WANT_FFMPEG)
   target_link_libraries(glgrab-av-preload glgrab-avformat)
   install(TARGETS glgrab-av-preload LIBRARY DESTINATION ${GLGRAB_LIBDIR})
 
-  add_executable(glgrab-export export.c)
-  target_link_libraries(glgrab-export glgrab-avformat avcodec avformat avutil avdevice swscale rt)
-  set_target_properties(glgrab-export PROPERTIES COMPILE_FLAGS "-pthread" LINK_FLAGS "-pthread")
-  install(TARGETS glgrab-export RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
   configure_file(glgrab-av.in glgrab-av ESCAPE_QUOTES @ONLY)
   install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/glgrab-av DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
