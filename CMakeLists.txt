@@ -56,5 +56,3 @@ if(WANT_FFMPEG)
 endif()
 
 install(FILES README DESTINATION ${CMAKE_INSTALL_DOCDIR})
-
-add_executable(glgrab-monitor EXCLUDE_FROM_ALL monitor.c mrb_read.c)
