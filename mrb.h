@@ -44,7 +44,7 @@ struct mrb_item {
 };
 
 struct mrb {
-	volatile struct mrb_hdr *header;
+	struct mrb_hdr *header;
 	char *base;
 
 	uint64_t size;

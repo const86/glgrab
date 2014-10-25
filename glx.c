@@ -37,8 +37,8 @@
 struct glxgrab {
 	struct glgrab gl;
 	LIST_HEAD(, winmap) winmap;
-	volatile GLXContext ctx;
-	volatile bool lock;
+	GLXContext ctx;
+	bool lock;
 };
 
 struct winmap {
@@ -52,7 +52,7 @@ static struct glxgrab glx = {
 };
 
 static void lock(struct glxgrab *g) {
-	while (__atomic_exchange_n(&g->lock, true, __ATOMIC_ACQ_REL))
+	while (__atomic_exchange_n(&g->lock, true, __ATOMIC_ACQUIRE))
 		sched_yield();
 }
 
@@ -119,7 +119,7 @@ int glgrab_XDestroyWindow(int (*real)(Display *, Window), Display *dpy, Window w
 
 void glgrab_glXDestroyContext(void (*real)(Display *, GLXContext), Display *dpy, GLXContext ctx) {
 	GLXContext curr = ctx;
-	__atomic_compare_exchange_n(&glx.ctx, &curr, NULL, false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME);
+	__atomic_compare_exchange_n(&glx.ctx, &curr, NULL, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 	real(dpy, ctx);
 }
 
@@ -172,7 +172,7 @@ static void take_frame(struct glxgrab *g, Display *dpy, GLXContext ctx, GLXDrawa
 	}
 
 	GLXContext curr = NULL;
-	if (__atomic_compare_exchange_n(&g->ctx, &curr, ctx, false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME)) {
+	if (__atomic_compare_exchange_n(&g->ctx, &curr, ctx, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
 		if (glgrab_init_from_env(&g->gl) != 0 || !glgrab_reset(&g->gl))
 			return;
 	} else {

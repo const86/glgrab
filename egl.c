@@ -31,7 +31,7 @@
 
 struct eglgrab {
 	struct glgrab gl;
-	volatile EGLContext ctx;
+	EGLContext ctx;
 };
 
 static struct eglgrab egl = {
@@ -43,7 +43,7 @@ EGLBoolean glgrab_eglDestroyContext(EGLBoolean (*real)(EGLDisplay, EGLContext), 
 
 	if (res == EGL_TRUE) {
 		__atomic_compare_exchange_n(&egl.ctx, &ctx, EGL_NO_CONTEXT,
-			false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME);
+			false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 	}
 
 	return res;
@@ -51,7 +51,7 @@ EGLBoolean glgrab_eglDestroyContext(EGLBoolean (*real)(EGLDisplay, EGLContext), 
 
 static void take_frame(struct eglgrab *g, EGLDisplay dpy, EGLContext ctx, EGLSurface surface) {
 	EGLContext curr = EGL_NO_CONTEXT;
-	if (__atomic_compare_exchange_n(&g->ctx, &curr, ctx, false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME)) {
+	if (__atomic_compare_exchange_n(&g->ctx, &curr, ctx, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
 		if (glgrab_init_from_env(&g->gl) != 0 || !glgrab_reset(&g->gl))
 			return;
 	} else {

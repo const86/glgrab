@@ -54,9 +54,9 @@ static void release(struct glgrab *g, enum state state) {
 }
 
 int glgrab_init(struct glgrab *g, const char *path, uint64_t bufsize, uint64_t max_frame_size) {
-	enum state state = virgin;
+	int state = virgin;
 	if (!__atomic_compare_exchange_n(&g->state, &state, initializing,
-			false, __ATOMIC_ACQ_REL, __ATOMIC_CONSUME)) {
+			false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
 		return state == failed ? EINVAL : 0;
 	}
 
@@ -97,7 +97,7 @@ int glgrab_init_from_env(struct glgrab *g) {
 
 static bool try_lock(struct glgrab *g) {
 	enum state state = ready;
-	return __atomic_compare_exchange_n(&g->state, &state, using, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+	return __atomic_compare_exchange_n(&g->state, &state, using, false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE);
 }
 
 bool glgrab_destroy(struct glgrab *g) {

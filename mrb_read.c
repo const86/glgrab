@@ -100,7 +100,7 @@ bool mrb_check(struct mrb *q) {
 	if (q->next.seq == 0)
 		return false;
 
-	struct mrb_item head = mrb_item_unpack(q, __atomic_load_n(&q->header->head, __ATOMIC_CONSUME));
+	struct mrb_item head = mrb_item_unpack(q, __atomic_load_n(&q->header->head, __ATOMIC_SEQ_CST));
 
 	if (head.seq == 0)
 		return false;
@@ -108,20 +108,20 @@ bool mrb_check(struct mrb *q) {
 	if (q->next.seq >= head.seq)
 		return true;
 
-	struct mrb_item tail = mrb_item_unpack(q, __atomic_load_n(&q->header->tail, __ATOMIC_CONSUME));
+	struct mrb_item tail = mrb_item_unpack(q, __atomic_load_n(&q->header->tail, __ATOMIC_ACQUIRE));
 	return q->next.seq <= tail.seq && tail.seq < head.seq;
 }
 
 bool mrb_reveal(struct mrb *q, const void **p) {
 	if (!mrb_check(q)) {
-		volatile mrb_ptr *start = q->next.seq == 0 ? &q->header->tail : &q->header->head;
+		mrb_ptr *start = q->next.seq == 0 ? &q->header->tail : &q->header->head;
 		q->next = mrb_item_unpack(q, __atomic_load_n(start, __ATOMIC_ACQUIRE));
 	}
 
 	if (q->next.seq == 0 ||
 		q->next.seq == mrb_item_unpack(q, __atomic_load_n(&q->header->tail, __ATOMIC_ACQUIRE)).seq) {
 		*p = NULL;
-		return !__atomic_load_n(&q->header->active, __ATOMIC_CONSUME);
+		return !__atomic_load_n(&q->header->active, __ATOMIC_ACQUIRE);
 	}
 
 	*p = q->base + q->next.off + q->data_offset;
@@ -129,11 +129,11 @@ bool mrb_reveal(struct mrb *q, const void **p) {
 }
 
 void mrb_release(struct mrb *q) {
-	struct mrb_item next = mrb_item_unpack(q, __atomic_load_n((mrb_ptr *)(q->base + q->next.off), __ATOMIC_CONSUME));
+	struct mrb_item next = mrb_item_unpack(q, __atomic_load_n((mrb_ptr *)(q->base + q->next.off), __ATOMIC_RELAXED));
 
 	if (mrb_check(q)) {
 		q->next = next;
 	} else {
-		q->next = mrb_item_unpack(q, __atomic_load_n(&q->header->head, __ATOMIC_CONSUME));
+		q->next = mrb_item_unpack(q, __atomic_load_n(&q->header->head, __ATOMIC_RELAXED));
 	}
 }

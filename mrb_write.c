@@ -135,7 +135,7 @@ void *mrb_reserve(struct mrb *q, uint64_t size) {
 		headp = *(mrb_ptr *)(q->base + head.off);
 	}
 
-	__atomic_store_n(&q->header->head, headp, __ATOMIC_RELAXED);
+	__atomic_store_n(&q->header->head, headp, __ATOMIC_RELEASE);
 	__atomic_store_n((mrb_ptr *)(q->base + tail.off), mrb_item_pack(q, next), __ATOMIC_RELEASE);
 
 	q->next = next;
@@ -147,7 +147,7 @@ void mrb_commit(struct mrb *q) {
 		if (q->header->head == 0) {
 			mrb_ptr head = q->header->tail;
 			__atomic_store_n(&q->header->tail, mrb_item_pack(q, q->next), __ATOMIC_RELEASE);
-			__atomic_store_n(&q->header->head, head, __ATOMIC_RELAXED);
+			__atomic_store_n(&q->header->head, head, __ATOMIC_RELEASE);
 		} else {
 			__atomic_store_n(&q->header->tail, mrb_item_pack(q, q->next), __ATOMIC_RELEASE);
 		}

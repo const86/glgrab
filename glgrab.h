@@ -52,7 +52,7 @@ struct glgrab {
 	GLuint rbo;
 	GLuint pbo;
 
-	volatile int state;
+	int state;
 	GLenum last_error;
 };
 
