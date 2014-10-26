@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(glgrab C)
-set(VERSION 0.1)
+set(VERSION 0.2)
 
 include(GNUInstallDirs)
 
@@ -13,7 +13,7 @@ set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
 
 add_definitions(-std=c99 -pedantic -Wall -fvisibility=hidden)
 
-add_library(glgrab SHARED glgrab.c mrb_write.c)
+add_library(glgrab SHARED glgrab.c bgra2yuv420p.c mrb_write.c)
 target_link_libraries(glgrab rt GL)
 set_target_properties(glgrab PROPERTIES SOVERSION 0 VERSION ${VERSION})
 install(TARGETS glgrab LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -42,7 +42,7 @@ if(WANT_EGL)
 endif()
 
 if(WANT_FFMPEG)
-  add_library(glgrab-avformat SHARED avformat.c bgra2yuv420p.c mrb_read.c)
+  add_library(glgrab-avformat SHARED avformat.c mrb_read.c)
   target_link_libraries(glgrab-avformat avcodec avformat rt)
   set_target_properties(glgrab-avformat PROPERTIES SOVERSION 0 VERSION ${VERSION})
   install(TARGETS glgrab-avformat LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

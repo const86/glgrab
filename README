@@ -55,16 +55,3 @@ Refer to FFmpeg's manuals at this point. Example:
 
   glgrab-av ffmpeg -vsync vfr -f glgrab -r 30 -s 1024x768 -i <glgrab buffer> \
       -c:v libx264 -qp 0 video.mov
-
-FFmpeg doesn't deal with multiple CPUs very well. In an attempt to grab large
-and/or high rate video you may be limited by speed of single CPU core. To
-overtake this limitation use GLGrab's built-in colorspace conversion function.
-It's fast though still single-threaded. The same example eating 4 CPU cores:
-
-  glgrab-av ffmpeg -vsync vfr -f glgrab -r 30 -s 1024x768 -pix_fmt yuv420p \
-      -i <glgrab buffer> -c:v libx264 -qp 0 -threads 4 video.mov
-
-The -pix_fmt option enables faster conversion, so that slower ffmpeg's function
-won't be needed. Only yuv420p output format is supported. Depending on whole
-pipeline configuration ffmpeg may automatically switch GLGrab input into the
-yuv420p format.

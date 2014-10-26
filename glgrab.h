@@ -28,9 +28,7 @@
 
 /**
  * Structure of grabbed frame as passed through MRB.
- * Pixel data is in BGRA 8:8:8:8 format packed in lines
- * aligned by 8 byte. I.e. in case of odd width image contains
- * stray pixel at end of each line.
+ * Pixel data is in I420 format.
  * Timestamps are read after glXSwapBuffers() returns and merely
  * correspond to time of displaying.
  */
@@ -38,7 +36,9 @@ struct glgrab_frame {
 	uint64_t ns; ///< Timestamp in nanoseconds starting from unknown point
 	uint32_t height; ///< Height of image
 	uint32_t width; ///< Width of image
-	unsigned char data[] __attribute__((aligned(8)));
+	uint32_t padded_height; ///< Height of padded image
+	uint32_t padded_width; ///< Width of padded image
+	uint8_t data[] __attribute__((aligned(64)));
 };
 
 extern struct AVInputFormat glgrab_avformat;

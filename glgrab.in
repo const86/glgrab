@@ -23,7 +23,7 @@ do
 			GLGRAB_BUFSIZE=$((OPTARG << 20))
 			;;
 		f)
-			GLGRAB_MAXFRAME=$((OPTARG * 4000000 + 256))
+			GLGRAB_MAXFRAME=$((OPTARG * 1500000 + 256))
 			;;
 		k)
 			exec="exec"

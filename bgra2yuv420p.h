@@ -24,8 +24,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void bgra2yuv420p(const uint8_t *restrict bgra, ptrdiff_t bgra_stride,
-	uint8_t *restrict y, ptrdiff_t y_stride, uint8_t *restrict u, ptrdiff_t u_stride,
-	uint8_t *restrict v, ptrdiff_t v_stride, size_t width, size_t height);
+void bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32, size_t height2);
 
 #endif
