@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define ALIGN 64
@@ -65,14 +66,9 @@ int mrb_create(struct mrb *q, const char *path, uint64_t size, uint64_t max_item
 		goto err_close;
 
 	if (max_item_size) {
-#ifdef __linux__
-		if (remap_file_pages(addr + filesize, max_item_size, 0, 1, 0) != 0)
-			goto err_munmap;
-#else
 		if (mmap(addr + filesize, max_item_size, PROT_READ | PROT_WRITE,
 				MAP_SHARED | MAP_POPULATE | MAP_FIXED, fd, pagesize) == MAP_FAILED)
 			goto err_munmap;
-#endif
 	}
 
 	if (close(fd) != 0)
