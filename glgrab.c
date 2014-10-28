@@ -193,9 +193,9 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 			draw_buffers[i] = buf;
 		}
 
-		GLint read_buffer = 0, pack_alignment = 0;
+		GLint read_buffer = 0, pack_row_length = 0;
 		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
-		glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
+		glGetIntegerv(GL_PACK_ROW_LENGTH, &pack_row_length);
 
 		GLint read_fbo = 0, draw_fbo = 0;
 		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
@@ -211,7 +211,7 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 			GLint rbo = 0;
 			glGetIntegerv(GL_RENDERBUFFER_BINDING, &rbo);
 			glBindRenderbuffer(GL_RENDERBUFFER, g->rbo);
-			glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA, padded_width, padded_height);
+			glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA, width, height);
 			glBindRenderbuffer(GL_RENDERBUFFER, rbo);
 
 			glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -224,16 +224,16 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
-		glPixelStorei(GL_PACK_ALIGNMENT, 8);
+		glPixelStorei(GL_PACK_ROW_LENGTH, padded_width);
 
-		glReadPixels(0, 0, padded_width, padded_height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
 
 		glDrawBuffers(draw_buffers_n, draw_buffers);
 		glReadBuffer(read_buffer);
-		glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
+		glPixelStorei(GL_PACK_ROW_LENGTH, pack_row_length);
 
 		if (check_error(g, "filling PBO")) {
 			g->frame = NULL;
