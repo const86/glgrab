@@ -157,7 +157,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 
 	check_error(g, "before grabbing");
 
-	GLint pixel_pack_buffer;
+	GLint pixel_pack_buffer = 0;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, g->pbo);
 
@@ -183,7 +183,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		const uint32_t padded_width = width32 << width_align;
 		const uint32_t padded_height = height2 << height_align;
 
-		GLint draw_buffers_n;
+		GLint draw_buffers_n = 0;
 		glGetIntegerv(GL_MAX_DRAW_BUFFERS, &draw_buffers_n);
 
 		GLenum draw_buffers[draw_buffers_n];
@@ -193,11 +193,11 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 			draw_buffers[i] = buf;
 		}
 
-		GLint read_buffer, pack_alignment;
+		GLint read_buffer = 0, pack_alignment = 0;
 		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
 		glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
 
-		GLint read_fbo, draw_fbo;
+		GLint read_fbo = 0, draw_fbo = 0;
 		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
 		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
 
@@ -208,7 +208,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		glReadBuffer(GL_BACK);
 
 		if (resize) {
-			GLint rbo;
+			GLint rbo = 0;
 			glGetIntegerv(GL_RENDERBUFFER_BINDING, &rbo);
 			glBindRenderbuffer(GL_RENDERBUFFER, g->rbo);
 			glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA, padded_width, padded_height);
