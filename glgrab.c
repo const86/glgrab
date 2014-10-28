@@ -202,7 +202,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
 
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g->fbo);
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
 
 		glDrawBuffers(1, &(GLenum){GL_COLOR_ATTACHMENT0});
 		glReadBuffer(GL_BACK);
