@@ -65,7 +65,7 @@ static void take_frame(struct eglgrab *g, EGLDisplay dpy, EGLContext ctx, EGLSur
 		eglQuerySurface(dpy, surface, EGL_HEIGHT, &height) == EGL_FALSE)
 		return;
 
-	glgrab_take_frame(&g->gl, width, height);
+	glgrab_take_frame(&g->gl, GL_BACK, width, height);
 }
 
 EGLBoolean glgrab_eglSwapBuffers(EGLBoolean (*real)(EGLDisplay, EGLSurface), EGLDisplay *dpy, EGLSurface surface) {

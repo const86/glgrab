@@ -142,7 +142,7 @@ static uint32_t align(uint32_t x, short shift) {
 	return (x + mask) >> shift;
 }
 
-bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
+bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t height) {
 	const short width_align = 5;
 	const short height_align = 1;
 
@@ -205,7 +205,7 @@ bool glgrab_take_frame(struct glgrab *g, uint32_t width, uint32_t height) {
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
 
 		glDrawBuffers(1, &(GLenum){GL_COLOR_ATTACHMENT0});
-		glReadBuffer(GL_BACK);
+		glReadBuffer(buffer);
 
 		if (resize) {
 			GLint rbo = 0;

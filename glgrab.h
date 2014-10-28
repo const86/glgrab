@@ -61,6 +61,6 @@ int glgrab_init_from_env(struct glgrab *);
 bool glgrab_destroy(struct glgrab *);
 
 bool glgrab_reset(struct glgrab *);
-bool glgrab_take_frame(struct glgrab *, uint32_t width, uint32_t height);
+bool glgrab_take_frame(struct glgrab *, GLenum buffer, uint32_t width, uint32_t height);
 
 #endif

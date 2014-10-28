@@ -180,7 +180,7 @@ static void take_frame(struct glxgrab *g, Display *dpy, GLXContext ctx, GLXDrawa
 			return;
 	}
 
-	glgrab_take_frame(&g->gl, width, height);
+	glgrab_take_frame(&g->gl, GL_BACK, width, height);
 }
 
 void glgrab_glXSwapBuffers(void (*real)(Display *, GLXDrawable), Display *dpy, GLXDrawable drawable) {
