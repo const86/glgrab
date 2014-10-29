@@ -220,7 +220,7 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 			glBufferData(GL_PIXEL_PACK_BUFFER, padded_width * padded_height * 4, NULL, GL_STREAM_READ);
 		}
 
-		glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, height, width, 0, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);

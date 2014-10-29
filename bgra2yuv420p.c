@@ -150,13 +150,13 @@ void bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t wi
 	const ptrdiff_t bgra_stride = width32 * 128;
 	const ptrdiff_t y_stride = width32 * 32;
 
-	const uint8_t *p0 = bgra + bgra_stride * (height2 * 2 - 1);
+	const uint8_t *p0 = bgra;
 	uint8_t *y0 = yuv;
 	uint8_t *u = y0 + count_2x2 * 4;
 	uint8_t *v = u + count_2x2;
 
 	for (size_t row2 = 0; row2 < height2; row2++) {
-		const uint8_t *p1 = p0 - bgra_stride;
+		const uint8_t *p1 = p0 + bgra_stride;
 		uint8_t *y1 = y0 + y_stride;
 
 		for (size_t i = 0; i < width32; i++) {
@@ -170,7 +170,7 @@ void bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t wi
 			v += 16;
 		}
 
-		p0 = p1 - bgra_stride * 2;
+		p0 = p1;
 		y0 += y_stride;
 	}
 
@@ -208,13 +208,13 @@ bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32
 	const ptrdiff_t bgra_stride = width32 * 128;
 	const ptrdiff_t y_stride = width32 * 32;
 
-	const uint8_t *p0 = bgra + bgra_stride * (height2 * 2 - 1);
+	const uint8_t *p0 = bgra;
 	uint8_t *y0 = yuv;
 	uint8_t *u = y0 + count_2x2 * 4;
 	uint8_t *v = u + count_2x2;
 
 	for (size_t row2 = 0; row2 < height2; row2++) {
-		const uint8_t *p1 = p0 - bgra_stride;
+		const uint8_t *p1 = p0 + bgra_stride;
 		uint8_t *y1 = y0 + y_stride;
 
 		for (size_t i = 0; i < width32 * 16; i++) {
@@ -228,7 +228,7 @@ bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32
 			v += 1;
 		}
 
-		p0 = p1 - bgra_stride * 2;
+		p0 = p1;
 		y0 += y_stride;
 	}
 }
