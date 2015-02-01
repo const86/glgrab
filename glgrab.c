@@ -85,7 +85,7 @@ static unsigned long long str2int(const char *s, unsigned long long def) {
 	errno = 0;
 
 	long long int x = strtoll(s, &end, 0);
-	return errno == 0 && *end == '\0' && x >= 0 ? x : def;
+	return errno == 0 && *end == '\0' && x >= 0 ? (unsigned long long)x : def;
 }
 
 int glgrab_init_from_env(struct glgrab *g) {

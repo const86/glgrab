@@ -16,7 +16,7 @@ option(WANT_FFMPEG "Build FFmpeg plugin" ON)
 set(GLGRAB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/glgrab")
 set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
 
-add_compile_options(-Wall)
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 
 add_library(glgrab SHARED glgrab.c bgra2yuv420p.c mrb_write.c)
 target_link_libraries(glgrab PRIVATE rt GL)

@@ -170,7 +170,7 @@ static int read_packet(struct AVFormatContext *avctx, AVPacket *pkt) {
 			AVPicture pic;
 			avpicture_fill(&pic, pkt1.data, AV_PIX_FMT_YUV420P, codec->width, codec->height);
 
-			if (copy.width < codec->width || copy.height < codec->height)
+			if (copy.width < (unsigned)codec->width || copy.height < (unsigned)codec->height)
 				memset(pkt1.data, 0, pkt1.size);
 
 			av_picture_copy(&pic, &src, AV_PIX_FMT_YUV420P, FFMIN(codec->width, copy.width),
