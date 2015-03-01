@@ -61,3 +61,4 @@ if(WANT_FFMPEG)
 endif()
 
 install(EXPORT glgrab DESTINATION ${GLGRAB_INSTALL_LIBDIR})
+install(FILES glgrab-config.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/glgrab)
