@@ -43,6 +43,7 @@ unsigned la_version(unsigned version) {
 }
 
 unsigned la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
+#ifdef GLGRAB_APPLY_ELF_HACK
 	ElfW(Dyn) *last, *pltrelsz = NULL;
 	for (last = map->l_ld; last->d_tag != DT_NULL; ++last) {
 		if (last->d_tag == DT_PLTRELSZ)
@@ -61,6 +62,7 @@ unsigned la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
 
 		p[DT_PLTRELSZ - map->l_ld->d_tag] = pltrelsz;
 	}
+#endif
 
 	return LA_FLG_BINDTO | LA_FLG_BINDFROM;
 }

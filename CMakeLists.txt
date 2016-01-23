@@ -12,6 +12,7 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 option(WANT_EGL "Build EGL plugin" ON)
 option(WANT_GLX "Build GLX plugin" ON)
 option(WANT_FFMPEG "Build FFmpeg plugin" ON)
+option(APPLY_ELF_HACK "Apply hack for GNU LD" OFF)
 
 set(GLGRAB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/glgrab")
 set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
@@ -26,6 +27,9 @@ install(FILES mrb.h glgrab.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/glgrab)
 
 if(WANT_GLX)
   add_library(glgrab-audit-glx MODULE audit.c audit-glx.c)
+  if(APPLY_ELF_HACK)
+    target_compile_definitions(glgrab-audit-glx PRIVATE -DGLGRAB_APPLY_ELF_HACK)
+  endif()
 
   add_library(glgrab-glx MODULE glx.c)
   target_link_libraries(glgrab-glx PRIVATE glgrab dl GL X11)
@@ -37,6 +41,9 @@ endif()
 
 if(WANT_EGL)
   add_library(glgrab-audit-egl MODULE audit.c audit-egl.c)
+  if(APPLY_ELF_HACK)
+    target_compile_definitions(glgrab-audit-egl PRIVATE -DGLGRAB_APPLY_ELF_HACK)
+  endif()
 
   add_library(glgrab-egl MODULE egl.c)
   target_link_libraries(glgrab-egl PRIVATE glgrab dl EGL)
