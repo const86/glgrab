@@ -23,6 +23,7 @@
 
 #include "glgrab.h"
 #include "rgba2yuv420p.h"
+#include "cuda.h"
 
 #include <GL/gl.h>
 #include <errno.h>
@@ -285,7 +286,11 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, g->tex, 0);
 
-			readpixels_init(g, padded_width * padded_height * 4);
+			size_t size = padded_width * padded_height * 4;
+
+			if (!cuda_init(g, size)) {
+				readpixels_init(g, size);
+			}
 		}
 
 		glDrawBuffers(1, &(GLenum){GL_COLOR_ATTACHMENT0});

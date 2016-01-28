@@ -54,6 +54,11 @@ struct glgrab {
 		struct {
 			GLuint pbo;
 		} readpixels;
+		struct {
+			struct CUstream_st *stream;
+			struct cudaGraphicsResource *resource;
+			void *p_host;
+		} cuda;
 	};
 
 	bool (*engine_shoot)(struct glgrab *, size_t, size_t, size_t);
