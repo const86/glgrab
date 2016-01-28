@@ -49,7 +49,16 @@ struct glgrab {
 	struct glgrab_frame *frame;
 	GLuint fbo;
 	GLuint tex;
-	GLuint pbo;
+
+	union {
+		struct {
+			GLuint pbo;
+		} readpixels;
+	};
+
+	bool (*engine_shoot)(struct glgrab *, size_t, size_t, size_t);
+	bool (*engine_copy)(struct glgrab *);
+	void (*engine_cleanup)(struct glgrab *);
 
 	int state;
 	GLenum last_error;

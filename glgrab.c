@@ -117,11 +117,71 @@ bool glgrab_reset(struct glgrab *g) {
 
 	glGenFramebuffers(1, &g->fbo);
 	g->tex = 0;
-	glGenBuffers(1, &g->pbo);
+
+	g->engine_shoot = NULL;
+	g->engine_copy = NULL;
+	g->engine_cleanup = NULL;
 
 	g->frame = NULL;
 	release(g, ready);
 	return true;
+}
+
+static bool readpixels_shoot(struct glgrab *g, size_t width, size_t height, size_t pitch) {
+	GLint pixel_pack_buffer = 0;
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, g->readpixels.pbo);
+
+	GLint pack_row_length = 0;
+	glGetIntegerv(GL_PACK_ROW_LENGTH, &pack_row_length);
+
+	glPixelStorei(GL_PACK_ROW_LENGTH, pitch);
+	glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+
+	glPixelStorei(GL_PACK_ROW_LENGTH, pack_row_length);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
+	return true;
+}
+
+static bool readpixels_copy(struct glgrab *g) {
+	GLint pixel_pack_buffer = 0;
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, g->readpixels.pbo);
+
+	size_t size = g->frame->padded_width * g->frame->padded_height * 4;
+	GLvoid *data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, size, GL_MAP_READ_BIT);
+
+	if (data == NULL) {
+		return false;
+	}
+
+	bgra2yuv420p(data, g->frame->data,
+		g->frame->padded_width >> width_align,
+		g->frame->padded_height >> height_align);
+
+	glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
+	return true;
+}
+
+static void readpixels_cleanup(struct glgrab *g) {
+	glDeleteBuffers(1, &g->readpixels.pbo);
+	g->readpixels.pbo = 0;
+}
+
+static void readpixels_init(struct glgrab *g, GLsizeiptr size) {
+	GLint pixel_pack_buffer = 0;
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
+
+	glGenBuffers(1, &g->readpixels.pbo);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, g->readpixels.pbo);
+	glBufferData(GL_PIXEL_PACK_BUFFER, size, NULL, GL_STREAM_READ);
+
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
+
+	g->engine_shoot = readpixels_shoot;
+	g->engine_copy = readpixels_copy;
+	g->engine_cleanup = readpixels_cleanup;
 }
 
 static void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
@@ -148,9 +208,6 @@ static uint32_t align(uint32_t x, short shift) {
 }
 
 bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t height) {
-	const short width_align = 5;
-	const short height_align = 1;
-
 	if (!try_lock(g))
 		return false;
 
@@ -173,23 +230,12 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 	GLboolean debug_output = glIsEnabled(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT);
 
-	GLint pixel_pack_buffer = 0;
-	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
-	glBindBuffer(GL_PIXEL_PACK_BUFFER, g->pbo);
-
 	if (g->frame != NULL) {
-		size_t size = g->frame->padded_width * g->frame->padded_height * 4;
-		GLvoid *data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, size, GL_MAP_READ_BIT);
-		if (data != NULL) {
-			bgra2yuv420p(data, g->frame->data,
-				g->frame->padded_width >> width_align,
-				g->frame->padded_height >> height_align);
-			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-		}
+		bool copied = g->engine_copy(g);
 
 		resize = g->frame->width != width || g->frame->height != height;
 
-		if (!check_error(g, "reading PBO")) {
+		if (copied && !check_error(g, "reading PBO")) {
 			mrb_commit(&g->rb);
 		}
 	}
@@ -209,9 +255,8 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 			draw_buffers[i] = buf;
 		}
 
-		GLint read_buffer = 0, pack_row_length = 0;
+		GLint read_buffer = 0;
 		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
-		glGetIntegerv(GL_PACK_ROW_LENGTH, &pack_row_length);
 
 		GLint read_fbo = 0, draw_fbo = 0;
 		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
@@ -220,6 +265,11 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g->fbo);
 
 		if (resize) {
+			if (g->engine_cleanup) {
+				g->engine_cleanup(g);
+				g->engine_cleanup = NULL;
+			}
+
 			if (g->tex) {
 				glDeleteTextures(1, &g->tex);
 			}
@@ -235,7 +285,7 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, g->tex, 0);
 
-			glBufferData(GL_PIXEL_PACK_BUFFER, padded_width * padded_height * 4, NULL, GL_STREAM_READ);
+			readpixels_init(g, padded_width * padded_height * 4);
 		}
 
 		glDrawBuffers(1, &(GLenum){GL_COLOR_ATTACHMENT0});
@@ -247,18 +297,16 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
-		glPixelStorei(GL_PACK_ROW_LENGTH, padded_width);
 
-		glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		bool shot = g->engine_shoot(g, width, height, padded_width);
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
 
 		glDrawBuffers(draw_buffers_n, draw_buffers);
 		glReadBuffer(read_buffer);
-		glPixelStorei(GL_PACK_ROW_LENGTH, pack_row_length);
 
-		if (check_error(g, "filling PBO")) {
+		if (!shot || check_error(g, "filling PBO")) {
 			g->frame = NULL;
 		} else {
 			g->frame->width = width;
@@ -272,8 +320,6 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 		fprintf(stderr, "glgrab: Failed to allocate frame %" PRIu32 "x%" PRIu32 " in buffer\n",
 			width, height);
 	}
-
-	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
 
 	glDebugMessageCallback(debug_callback_function, debug_callback_user_param);
 

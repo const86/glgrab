@@ -23,4 +23,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+static const short width_align = 5;
+static const short height_align = 1;
+
 void bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32, size_t height2);
