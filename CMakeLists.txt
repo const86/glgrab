@@ -19,7 +19,7 @@ set(GLGRAB_LIBDIR "${CMAKE_INSTALL_PREFIX}/${GLGRAB_INSTALL_LIBDIR}")
 
 add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 
-add_library(glgrab SHARED glgrab.c bgra2yuv420p.c mrb_write.c)
+add_library(glgrab SHARED glgrab.c rgba2yuv420p.c mrb_write.c)
 target_link_libraries(glgrab PRIVATE rt GL)
 set_target_properties(glgrab PROPERTIES SOVERSION 0 VERSION ${VERSION})
 install(TARGETS glgrab EXPORT glgrab LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

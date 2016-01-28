@@ -1,4 +1,4 @@
-/* Fast BGRA -> YUV420p conversion
+/* Fast RGBA -> YUV420p conversion
  *
  * Copyright 2013 Constantin Baranov
  *
@@ -18,7 +18,7 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "bgra2yuv420p.h"
+#include "rgba2yuv420p.h"
 
 #define BT_709_KB 0.0722
 #define BT_709_KR 0.2126
@@ -95,37 +95,37 @@ static inline __m128i load(const __m128i *v, ptrdiff_t i) {
 #endif
 }
 
-static inline __m128i bgra2yuv420p_16x2(const void *restrict bgra0, const void *restrict bgra1,
+static inline __m128i rgba2yuv420p_16x2(const void *restrict rgba0, const void *restrict rgba1,
 	void *restrict y0, void *restrict y1) {
-	const __m128i Y = _mm_set_epi8(0, KRYi, KGYi, KBYi, 0, KRYi, KGYi, KBYi,
-		0, KRYi, KGYi, KBYi, 0, KRYi, KGYi, KBYi);
+	const __m128i Y = _mm_set_epi8(0, KBYi, KGYi, KRYi, 0, KBYi, KGYi, KRYi,
+		0, KBYi, KGYi, KRYi, 0, KBYi, KGYi, KRYi);
 	const __m128i Yb = _mm_set1_epi16(Ybias);
 
-	const __m128i U = _mm_set_epi8(0, KRUi, KGUi, KBUi, 0, KRUi, KGUi, KBUi,
-		0, KRUi, KGUi, KBUi, 0, KRUi, KGUi, KBUi);
-	const __m128i V = _mm_set_epi8(0, KRVi, KGVi, KBVi, 0, KRVi, KGVi, KBVi,
-		0, KRVi, KGVi, KBVi, 0, KRVi, KGVi, KBVi);
+	const __m128i U = _mm_set_epi8(0, KBUi, KGUi, KRUi, 0, KBUi, KGUi, KRUi,
+		0, KBUi, KGUi, KRUi, 0, KBUi, KGUi, KRUi);
+	const __m128i V = _mm_set_epi8(0, KBVi, KGVi, KRVi, 0, KBVi, KGVi, KRVi,
+		0, KBVi, KGVi, KRVi, 0, KBVi, KGVi, KRVi);
 	const __m128i Cb = _mm_set1_epi16(Cbias);
 
-	const __m128i p00 = load(bgra0, 0);
-	const __m128i p01 = load(bgra0, 1);
+	const __m128i p00 = load(rgba0, 0);
+	const __m128i p01 = load(rgba0, 1);
 	const __m128i d00 = dot(p00, p01, Y);
 
-	const __m128i p10 = load(bgra1, 0);
-	const __m128i p11 = load(bgra1, 1);
+	const __m128i p10 = load(rgba1, 0);
+	const __m128i p11 = load(rgba1, 1);
 	const __m128i n0 = navg(p00, p10);
 	const __m128i n1 = navg(p01, p11);
 	const __m128i d10 = dot(p10, p11, Y);
 	const __m128i a01 = avg(n0, n1);
 
-	const __m128i p02 = load(bgra0, 2);
-	const __m128i p03 = load(bgra0, 3);
+	const __m128i p02 = load(rgba0, 2);
+	const __m128i p03 = load(rgba0, 3);
 	const __m128i d02 = dot(p02, p03, Y);
 
 	_mm_stream_si128(y0, pack(d00, d02, Yb, SY));
 
-	const __m128i p12 = load(bgra1, 2);
-	const __m128i p13 = load(bgra1, 3);
+	const __m128i p12 = load(rgba1, 2);
+	const __m128i p13 = load(rgba1, 3);
 	const __m128i n2 = navg(p02, p12);
 	const __m128i n3 = navg(p03, p13);
 	const __m128i d12 = dot(p12, p13, Y);
@@ -136,31 +136,31 @@ static inline __m128i bgra2yuv420p_16x2(const void *restrict bgra0, const void *
 	return pack(dot(a01, a23, U), dot(a01, a23, V), Cb, SC);
 }
 
-static inline void bgra2yuv420p_32x2(const uint8_t *restrict bgra0, const uint8_t *restrict bgra1,
+static inline void rgba2yuv420p_32x2(const uint8_t *restrict rgba0, const uint8_t *restrict rgba1,
 	uint8_t *restrict y0, uint8_t *restrict y1, void *restrict u, void *restrict v) {
-	const __m128i uv0 = bgra2yuv420p_16x2(bgra0 + 0x00, bgra1 + 0x00, y0 + 0x00, y1 + 0x00);
-	const __m128i uv1 = bgra2yuv420p_16x2(bgra0 + 0x40, bgra1 + 0x40, y0 + 0x10, y1 + 0x10);
+	const __m128i uv0 = rgba2yuv420p_16x2(rgba0 + 0x00, rgba1 + 0x00, y0 + 0x00, y1 + 0x00);
+	const __m128i uv1 = rgba2yuv420p_16x2(rgba0 + 0x40, rgba1 + 0x40, y0 + 0x10, y1 + 0x10);
 
 	_mm_stream_si128(u, _mm_unpacklo_epi64(uv0, uv1));
 	_mm_stream_si128(v, _mm_unpackhi_epi64(uv0, uv1));
 }
 
-void bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32, size_t height2) {
+void rgba2yuv420p(const uint8_t *restrict rgba, uint8_t *restrict yuv, size_t width32, size_t height2) {
 	const size_t count_2x2 = width32 * 16 * height2;
-	const ptrdiff_t bgra_stride = width32 * 128;
+	const ptrdiff_t rgba_stride = width32 * 128;
 	const ptrdiff_t y_stride = width32 * 32;
 
-	const uint8_t *p0 = bgra;
+	const uint8_t *p0 = rgba;
 	uint8_t *y0 = yuv;
 	uint8_t *u = y0 + count_2x2 * 4;
 	uint8_t *v = u + count_2x2;
 
 	for (size_t row2 = 0; row2 < height2; row2++) {
-		const uint8_t *p1 = p0 + bgra_stride;
+		const uint8_t *p1 = p0 + rgba_stride;
 		uint8_t *y1 = y0 + y_stride;
 
 		for (size_t i = 0; i < width32; i++) {
-			bgra2yuv420p_32x2(p0, p1, y0, y1, u, v);
+			rgba2yuv420p_32x2(p0, p1, y0, y1, u, v);
 
 			p0 += 128;
 			p1 += 128;
@@ -187,38 +187,38 @@ static uint8_t avg(uint8_t a00, uint8_t a10, uint8_t a01, uint8_t a11) {
 	return navg(navg(a00, a10), navg(a01, a11));
 }
 
-static void bgra2yuv420p_2x2(const uint8_t *restrict p0, const uint8_t *restrict p1,
+static void rgba2yuv420p_2x2(const uint8_t *restrict p0, const uint8_t *restrict p1,
 	uint8_t *restrict y0, uint8_t *restrict y1, uint8_t *restrict u, uint8_t *restrict v) {
-	y0[0] = (uint16_t)(Ybias + KBYi * p0[0] + KGYi * p0[1] + KRYi * p0[2]) >> SY;
-	y0[1] = (uint16_t)(Ybias + KBYi * p0[4] + KGYi * p0[5] + KRYi * p0[6]) >> SY;
-	y1[0] = (uint16_t)(Ybias + KBYi * p1[0] + KGYi * p1[1] + KRYi * p1[2]) >> SY;
-	y1[1] = (uint16_t)(Ybias + KBYi * p1[4] + KGYi * p1[5] + KRYi * p1[6]) >> SY;
+	y0[0] = (uint16_t)(Ybias + KRYi * p0[0] + KGYi * p0[1] + KBYi * p0[2]) >> SY;
+	y0[1] = (uint16_t)(Ybias + KRYi * p0[4] + KGYi * p0[5] + KBYi * p0[6]) >> SY;
+	y1[0] = (uint16_t)(Ybias + KRYi * p1[0] + KGYi * p1[1] + KBYi * p1[2]) >> SY;
+	y1[1] = (uint16_t)(Ybias + KRYi * p1[4] + KGYi * p1[5] + KBYi * p1[6]) >> SY;
 
 	const uint8_t b = avg(p0[0], p1[0], p0[4], p1[4]);
 	const uint8_t g = avg(p0[1], p1[1], p0[5], p1[5]);
 	const uint8_t r = avg(p0[2], p1[2], p0[6], p1[6]);
 
-	*u = (uint16_t)(Cbias + KBUi * b + KGUi * g + KRUi * r) >> SC;
-	*v = (uint16_t)(Cbias + KBVi * b + KGVi * g + KRVi * r) >> SC;
+	*u = (uint16_t)(Cbias + KRUi * b + KGUi * g + KBUi * r) >> SC;
+	*v = (uint16_t)(Cbias + KRVi * b + KGVi * g + KBVi * r) >> SC;
 }
 
 void __attribute__((noinline, optimize("tree-vectorize")))
-bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32, size_t height2) {
+rgba2yuv420p(const uint8_t *restrict rgba, uint8_t *restrict yuv, size_t width32, size_t height2) {
 	const size_t count_2x2 = width32 * 16 * height2;
-	const ptrdiff_t bgra_stride = width32 * 128;
+	const ptrdiff_t rgba_stride = width32 * 128;
 	const ptrdiff_t y_stride = width32 * 32;
 
-	const uint8_t *p0 = bgra;
+	const uint8_t *p0 = rgba;
 	uint8_t *y0 = yuv;
 	uint8_t *u = y0 + count_2x2 * 4;
 	uint8_t *v = u + count_2x2;
 
 	for (size_t row2 = 0; row2 < height2; row2++) {
-		const uint8_t *p1 = p0 + bgra_stride;
+		const uint8_t *p1 = p0 + rgba_stride;
 		uint8_t *y1 = y0 + y_stride;
 
 		for (size_t i = 0; i < width32 * 16; i++) {
-			bgra2yuv420p_2x2(p0, p1, y0, y1, u, v);
+			rgba2yuv420p_2x2(p0, p1, y0, y1, u, v);
 
 			p0 += 8;
 			p1 += 8;

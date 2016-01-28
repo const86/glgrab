@@ -22,7 +22,7 @@
 #define GL_GLEXT_PROTOTYPES
 
 #include "glgrab.h"
-#include "bgra2yuv420p.h"
+#include "rgba2yuv420p.h"
 
 #include <GL/gl.h>
 #include <errno.h>
@@ -136,7 +136,7 @@ static bool readpixels_shoot(struct glgrab *g, size_t width, size_t height, size
 	glGetIntegerv(GL_PACK_ROW_LENGTH, &pack_row_length);
 
 	glPixelStorei(GL_PACK_ROW_LENGTH, pitch);
-	glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 	glPixelStorei(GL_PACK_ROW_LENGTH, pack_row_length);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
@@ -155,7 +155,7 @@ static bool readpixels_copy(struct glgrab *g) {
 		return false;
 	}
 
-	bgra2yuv420p(data, g->frame->data,
+	rgba2yuv420p(data, g->frame->data,
 		g->frame->padded_width >> width_align,
 		g->frame->padded_height >> height_align);
 
