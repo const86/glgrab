@@ -124,6 +124,11 @@ bool glgrab_reset(struct glgrab *g) {
 	return true;
 }
 
+static void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
+	GLsizei length, const GLchar *message, const void *null) {
+	fprintf(stderr, "glgrab: GL: %.*s\n", (int)length, message);
+}
+
 static bool check_error(struct glgrab *g, const char msg[]) {
 	GLenum error = glGetError();
 	if (error == GL_NO_ERROR)
@@ -156,6 +161,17 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 	bool resize = true;
 
 	check_error(g, "before grabbing");
+
+	GLvoid *debug_callback_function = NULL;
+	glGetPointerv(GL_DEBUG_CALLBACK_FUNCTION, &debug_callback_function);
+
+	GLvoid *debug_callback_user_param = NULL;
+	glGetPointerv(GL_DEBUG_CALLBACK_USER_PARAM, &debug_callback_user_param);
+
+	glDebugMessageCallback(debug_callback, NULL);
+
+	GLboolean debug_output = glIsEnabled(GL_DEBUG_OUTPUT);
+	glEnable(GL_DEBUG_OUTPUT);
 
 	GLint pixel_pack_buffer = 0;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixel_pack_buffer);
@@ -251,6 +267,12 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 	}
 
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, pixel_pack_buffer);
+
+	glDebugMessageCallback(debug_callback_function, debug_callback_user_param);
+
+	if (!debug_output) {
+		glDisable(GL_DEBUG_OUTPUT);
+	}
 
 	release(g, ready);
 	return res;
