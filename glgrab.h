@@ -48,7 +48,7 @@ struct glgrab {
 
 	struct glgrab_frame *frame;
 	GLuint fbo;
-	GLuint rbo;
+	GLuint tex;
 	GLuint pbo;
 
 	int state;

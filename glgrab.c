@@ -116,7 +116,7 @@ bool glgrab_reset(struct glgrab *g) {
 		return false;
 
 	glGenFramebuffers(1, &g->fbo);
-	glGenRenderbuffers(1, &g->rbo);
+	g->tex = 0;
 	glGenBuffers(1, &g->pbo);
 
 	g->frame = NULL;
@@ -218,23 +218,30 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
 
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g->fbo);
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
-
-		glDrawBuffers(1, &(GLenum){GL_COLOR_ATTACHMENT0});
-		glReadBuffer(buffer);
 
 		if (resize) {
-			GLint rbo = 0;
-			glGetIntegerv(GL_RENDERBUFFER_BINDING, &rbo);
-			glBindRenderbuffer(GL_RENDERBUFFER, g->rbo);
-			glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA, width, height);
-			glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+			if (g->tex) {
+				glDeleteTextures(1, &g->tex);
+			}
 
-			glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-				GL_RENDERBUFFER, g->rbo);
+			glGenTextures(1, &g->tex);
+
+			GLint tex = 0;
+			glGetIntegerv(GL_TEXTURE_BINDING_RECTANGLE, &tex);
+
+			glBindTexture(GL_TEXTURE_RECTANGLE, g->tex);
+			glTexStorage2D(GL_TEXTURE_RECTANGLE, 1, GL_RGB8, width, height);
+			glBindTexture(GL_TEXTURE_RECTANGLE, tex);
+
+			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, g->tex, 0);
 
 			glBufferData(GL_PIXEL_PACK_BUFFER, padded_width * padded_height * 4, NULL, GL_STREAM_READ);
 		}
+
+		glDrawBuffers(1, &(GLenum){GL_COLOR_ATTACHMENT0});
+
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
+		glReadBuffer(buffer);
 
 		glBlitFramebuffer(0, height, width, 0, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
