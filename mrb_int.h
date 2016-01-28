@@ -18,6 +18,8 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma once
+
 #include "mrb.h"
 #include <sys/mman.h>
 

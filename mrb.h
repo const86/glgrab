@@ -30,8 +30,7 @@
  * But delivery reliability is sacrificed for the write speed.
  */
 
-#ifndef _GLGRAB_MRB_H
-#define _GLGRAB_MRB_H
+#pragma once
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -189,5 +188,3 @@ bool mrb_check(struct mrb *);
  * as soon as possible to minimized chance of losing next messages.
  */
 void mrb_release(struct mrb *);
-
-#endif

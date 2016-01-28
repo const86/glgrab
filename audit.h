@@ -18,8 +18,7 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _GLGRAB_AUDIT_H
-#define _GLGRAB_AUDIT_H
+#pragma once
 
 typedef void (*func_p)(void);
 typedef func_p *func_pp;
@@ -39,5 +38,3 @@ extern const struct hook hooks[];
 extern const struct sub subs[];
 
 func_p apply_sub(const char *name, func_p real);
-
-#endif

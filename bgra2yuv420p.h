@@ -18,12 +18,9 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _BGRA2YUV420P_H
-#define _BGRA2YUV420P_H
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
 
 void bgra2yuv420p(const uint8_t *restrict bgra, uint8_t *restrict yuv, size_t width32, size_t height2);
-
-#endif

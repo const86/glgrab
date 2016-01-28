@@ -18,8 +18,7 @@
  * along with GLGrab.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _GLGRAB_H
-#define _GLGRAB_H
+#pragma once
 
 #include <GL/gl.h>
 #include <stdbool.h>
@@ -62,5 +61,3 @@ bool glgrab_destroy(struct glgrab *);
 
 bool glgrab_reset(struct glgrab *);
 bool glgrab_take_frame(struct glgrab *, GLenum buffer, uint32_t width, uint32_t height);
-
-#endif
