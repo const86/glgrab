@@ -81,6 +81,11 @@ static int setup_stream(struct AVFormatContext *avctx) {
 	codec->width = FFALIGN(g->width, 2);
 	codec->height = FFALIGN(g->height, 2);
 	codec->pix_fmt = AV_PIX_FMT_YUV420P;
+	codec->color_primaries = AVCOL_PRI_BT709;
+	codec->color_trc = AVCOL_TRC_BT709;
+	codec->colorspace = AVCOL_SPC_BT709;
+	codec->color_range = AVCOL_RANGE_MPEG;
+	codec->chroma_sample_location = AVCHROMA_LOC_CENTER;
 	return 0;
 }
 
