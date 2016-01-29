@@ -256,6 +256,10 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 			draw_buffers[i] = buf;
 		}
 
+		while (draw_buffers_n > 0 && draw_buffers[draw_buffers_n - 1] == GL_NONE) {
+			--draw_buffers_n;
+		}
+
 		GLint read_buffer = 0;
 		glGetIntegerv(GL_READ_BUFFER, &read_buffer);
 
@@ -308,7 +312,12 @@ bool glgrab_take_frame(struct glgrab *g, GLenum buffer, uint32_t width, uint32_t
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
 
-		glDrawBuffers(draw_buffers_n, draw_buffers);
+		if (draw_buffers_n == 1) {
+			glDrawBuffer(draw_buffers[0]);
+		} else {
+			glDrawBuffers(draw_buffers_n, draw_buffers);
+		}
+
 		glReadBuffer(read_buffer);
 
 		if (!shot || check_error(g, "filling PBO")) {
